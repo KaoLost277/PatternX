@@ -11,6 +11,12 @@ from app.completeness import (
     parse_missing_markers,
     read_column_names,
 )
+from app.patterns import (
+    ColumnSelectionError,
+    PatternSummary,
+    compute_pattern_summary,
+    parse_analysis_columns,
+)
 from app.workfiles import (
     clear_duckdb_working_directory,
     default_work_directory,
@@ -74,6 +80,37 @@ def create_application(work_directory: Path) -> FastAPI:
 
         return column_completeness_response(summary)
 
+    @application.post("/api/pattern-summary")
+    async def pattern_summary(
+        file: UploadFile,
+        missing_markers: str | None = Form(default=None),
+        identifier_column: str | None = Form(default=None),
+        analysis_columns: str | None = Form(default=None),
+    ) -> dict[str, object]:
+        require_csv_file(file)
+
+        raw_file_path = await write_upload_to_raw_file(work_directory, file)
+        try:
+            require_non_empty_file(raw_file_path)
+            summary = compute_pattern_summary(
+                raw_file_path,
+                duckdb_working_directory(work_directory),
+                parse_missing_markers(missing_markers),
+                parse_analysis_columns(analysis_columns),
+                identifier_column,
+            )
+        except (MissingValueMarkersError, NoInputRowsError, ColumnSelectionError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except duckdb.Error as error:
+            raise HTTPException(
+                status_code=400,
+                detail="The uploaded file could not be read as a CSV file.",
+            ) from error
+        finally:
+            clean_up_request_files(work_directory, raw_file_path)
+
+        return pattern_summary_response(summary)
+
     return application
 
 
@@ -122,6 +159,25 @@ def column_completeness_response(summary: ColumnCompletenessSummary) -> dict[str
         )
 
     return {"input_rows": summary.input_rows, "columns": columns}
+
+
+def pattern_summary_response(summary: PatternSummary) -> dict[str, object]:
+    patterns = []
+    for pattern in summary.patterns:
+        patterns.append(
+            {
+                "statuses": list(pattern.statuses),
+                "count": pattern.count,
+                "share": pattern.share,
+            }
+        )
+
+    return {
+        "input_rows": summary.input_rows,
+        "identifier_column": summary.identifier_column,
+        "analysis_columns": list(summary.analysis_columns),
+        "patterns": patterns,
+    }
 
 
 app = create_application(default_work_directory())
