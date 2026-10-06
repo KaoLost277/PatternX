@@ -319,3 +319,69 @@
   background-color: #f1f5f9;
   border: 1px solid #e2e8f0;
 }
+
+.warning-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+}
+
+.warning-heading {
+  margin: 0;
+  color: #92400e;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.acknowledgement-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #78350f;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.progress-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.progress-track {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysis-progress {
+  width: 100%;
+  height: 10px;
+  appearance: none;
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.analysis-progress::-webkit-progress-bar {
+  background-color: #f1f5f9;
+}
+
+.analysis-progress::-webkit-progress-value {
+  background-color: #64748b;
+  border-radius: 999px;
+}
+
+.analysis-progress::-moz-progress-bar {
+  background-color: #64748b;
+  border-radius: 999px;
+}

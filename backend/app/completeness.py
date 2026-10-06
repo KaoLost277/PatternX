@@ -23,6 +23,8 @@ MISSING_MARKERS_RULES_MESSAGE = (
     "to lists of marker strings."
 )
 
+UNREADABLE_CSV_MESSAGE = "The uploaded file could not be read as a CSV file."
+
 
 class MissingValueMarkersError(ValueError):
     """Raised when the configured Missing Value markers cannot be applied."""

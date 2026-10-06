@@ -10,8 +10,10 @@ and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
 You can import a CSV file or one chosen worksheet of an XLSX workbook and see the Column Completeness
 Summary: for every column, the exact count and share of Input Rows with a present value. Null, empty,
 and whitespace-only values are missing by default, additional missing value markers can be configured
-per column, and zero counts as present. Pattern analysis, exports, and the rest of the workflow
-follow in later tickets.
+per column, and zero counts as present. The Completeness Summary — every observed Completeness Pattern
+with its exact count and share of Input Rows — runs as a background analysis job with progress,
+elapsed-time reporting, and cancellation. Pattern row previews and the exports follow in later
+tickets.
 
 ## Prerequisites
 
@@ -58,6 +60,21 @@ Excel's file format defines a maximum of 1,048,576 worksheet rows, header row in
 application reads every row the chosen worksheet holds and never truncates it: a worksheet at the
 limit is counted to its full 1,048,575 data rows. CSV files have no such worksheet row limit.
 
+## Analysis jobs
+
+The Completeness Summary runs as a background analysis job. While it runs, the app reports what stage
+the job is in, how long it has been running, and how many Input Rows have been grouped so far, and
+the job can be cancelled at any time. Cancelling stops the work and deletes the job's working data,
+just like a finished or failed run.
+
+Before an analysis whose selected-column count reaches 20 the app shows a warning the user must
+acknowledge: 2^20 = 1,048,576 distinct Completeness Patterns become possible at that count, and the
+exact summary reports every observed one. This is a statement about the number of possible patterns,
+not a performance claim.
+
+Only the most recent analysis job is kept: starting a new analysis cancels and replaces the previous
+one, so results of an earlier import never survive into a newer one.
+
 ## Tests
 
 Install the test tooling once, then run the suite from `backend`:
@@ -76,8 +93,8 @@ cd backend
 The API keeps all transient working data under one work directory
 (`%TEMP%\patternx` on Windows, `/tmp/patternx` on macOS), organized as:
 
-- `uploads/` — one private directory per request, holding the raw uploaded file and the normalized
-  CSV copy of the chosen worksheet; deleted again when the request ends
+- `uploads/` — one private directory per request and per analysis job, holding the raw uploaded file
+  and the normalized CSV copy of the chosen worksheet; deleted again when the request or the job ends
 - `duckdb/` — DuckDB spill and working files
 
-Nothing in this directory is kept after a request finishes.
+Nothing in this directory is kept after a request or an analysis job finishes.

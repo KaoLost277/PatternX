@@ -6,7 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from support import assert_no_working_files_left, make_test_client
+from support import (
+    assert_no_working_files_left,
+    await_analysis_job,
+    make_test_client,
+    run_analysis_job,
+    start_analysis_job,
+)
 
 client = TestClient(app)
 
@@ -90,7 +96,20 @@ def status_of(value, markers):
     return "present"
 
 
-def request_pattern_summary(
+def pattern_analysis_fields(
+    analysis_columns,
+    missing_markers_by_column=None,
+    identifier_column=None,
+):
+    form_fields = {"analysis_columns": json.dumps(analysis_columns)}
+    if missing_markers_by_column is not None:
+        form_fields["missing_markers"] = json.dumps(missing_markers_by_column)
+    if identifier_column is not None:
+        form_fields["identifier_column"] = identifier_column
+    return form_fields
+
+
+def request_pattern_analysis(
     test_client,
     csv_bytes,
     analysis_columns,
@@ -98,21 +117,34 @@ def request_pattern_summary(
     identifier_column=None,
     file_name="data.csv",
 ):
-    form_fields = {"analysis_columns": json.dumps(analysis_columns)}
-    if missing_markers_by_column is not None:
-        form_fields["missing_markers"] = json.dumps(missing_markers_by_column)
-    if identifier_column is not None:
-        form_fields["identifier_column"] = identifier_column
+    """Start one analysis job for the fixture and return the creation response."""
+    return start_analysis_job(
+        test_client,
+        file_name,
+        csv_bytes,
+        pattern_analysis_fields(analysis_columns, missing_markers_by_column, identifier_column),
+    )
 
-    return test_client.post(
-        "/api/pattern-summary",
-        files={"file": (file_name, csv_bytes, "text/csv")},
-        data=form_fields,
+
+def run_pattern_analysis(
+    test_client,
+    csv_bytes,
+    analysis_columns,
+    missing_markers_by_column=None,
+    identifier_column=None,
+    file_name="data.csv",
+):
+    """Run one full analysis job for the fixture and return its finished status."""
+    return run_analysis_job(
+        test_client,
+        file_name,
+        csv_bytes,
+        pattern_analysis_fields(analysis_columns, missing_markers_by_column, identifier_column),
     )
 
 
 def assert_matches_reference(
-    response_json,
+    analysis_result,
     csv_bytes,
     missing_markers_by_column,
     identifier_column,
@@ -125,16 +157,16 @@ def assert_matches_reference(
         analysis_columns,
     )
 
-    assert response_json["input_rows"] == expected["input_rows"]
-    assert response_json["identifier_column"] == expected["identifier_column"]
-    assert response_json["analysis_columns"] == expected["analysis_columns"]
-    assert response_json["patterns"] == expected["patterns"]
+    assert analysis_result["input_rows"] == expected["input_rows"]
+    assert analysis_result["identifier_column"] == expected["identifier_column"]
+    assert analysis_result["analysis_columns"] == expected["analysis_columns"]
+    assert analysis_result["patterns"] == expected["patterns"]
 
 
 def test_pattern_summary_matches_independent_reference_on_deterministic_fixture():
     missing_markers_by_column = {"email": ["unknown"], "amount": ["-"]}
 
-    response = request_pattern_summary(
+    status = run_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["email", "phone", "amount"],
@@ -142,9 +174,9 @@ def test_pattern_summary_matches_independent_reference_on_deterministic_fixture(
         identifier_column="record_id",
     )
 
-    assert response.status_code == 200
+    assert status["state"] == "succeeded"
     assert_matches_reference(
-        response.json(),
+        status["result"],
         PATTERN_FIXTURE,
         missing_markers_by_column,
         "record_id",
@@ -153,15 +185,16 @@ def test_pattern_summary_matches_independent_reference_on_deterministic_fixture(
 
 
 def test_input_rows_sharing_a_pattern_are_grouped_into_a_single_entry():
-    response = request_pattern_summary(
+    status = run_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["email", "phone", "amount"],
         identifier_column="record_id",
     )
 
-    assert response.status_code == 200
-    patterns = response.json()["patterns"]
+    assert status["state"] == "succeeded"
+    analysis_result = status["result"]
+    patterns = analysis_result["patterns"]
     statuses_entries = [tuple(pattern["statuses"]) for pattern in patterns]
 
     # Three rows miss only the email value; they share one pattern entry.
@@ -173,35 +206,37 @@ def test_input_rows_sharing_a_pattern_are_grouped_into_a_single_entry():
     # Every distinct pattern appears exactly once, and the counts cover all rows.
     assert len(statuses_entries) == len(set(statuses_entries))
     assert len(patterns) == 4
-    assert sum(pattern["count"] for pattern in patterns) == response.json()["input_rows"]
+    assert sum(pattern["count"] for pattern in patterns) == analysis_result["input_rows"]
     for pattern in patterns:
-        assert pattern["share"] == pytest.approx(pattern["count"] / response.json()["input_rows"])
+        assert pattern["share"] == pytest.approx(
+            pattern["count"] / analysis_result["input_rows"]
+        )
 
 
 def test_identifier_column_never_joins_the_analysis_and_never_changes_row_counts():
     analysis_columns = ["email", "phone"]
 
-    response = request_pattern_summary(
+    status = run_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         analysis_columns,
         identifier_column="record_id",
     )
 
-    assert response.status_code == 200
-    response_json = response.json()
+    assert status["state"] == "succeeded"
+    analysis_result = status["result"]
 
     # The Identifier Column is display-only and stays out of the analysis.
-    assert response_json["identifier_column"] == "record_id"
-    assert response_json["analysis_columns"] == analysis_columns
+    assert analysis_result["identifier_column"] == "record_id"
+    assert analysis_result["analysis_columns"] == analysis_columns
 
     # Repeating identifier values do not merge Input Rows: the six rows of the
     # file, including the three A1 rows and the two A2 rows, are all counted.
-    assert response_json["input_rows"] == 6
-    assert sum(pattern["count"] for pattern in response_json["patterns"]) == 6
+    assert analysis_result["input_rows"] == 6
+    assert sum(pattern["count"] for pattern in analysis_result["patterns"]) == 6
 
     assert_matches_reference(
-        response_json,
+        analysis_result,
         PATTERN_FIXTURE,
         {},
         "record_id",
@@ -210,18 +245,19 @@ def test_identifier_column_never_joins_the_analysis_and_never_changes_row_counts
 
 
 def test_identifier_column_requested_as_an_analysis_column_stays_out_of_the_analysis():
-    response = request_pattern_summary(
+    status = run_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["record_id", "email"],
         identifier_column="record_id",
     )
 
-    assert response.status_code == 200
-    assert response.json()["analysis_columns"] == ["email"]
-    assert all(len(pattern["statuses"]) == 1 for pattern in response.json()["patterns"])
+    assert status["state"] == "succeeded"
+    analysis_result = status["result"]
+    assert analysis_result["analysis_columns"] == ["email"]
+    assert all(len(pattern["statuses"]) == 1 for pattern in analysis_result["patterns"])
     assert_matches_reference(
-        response.json(),
+        analysis_result,
         PATTERN_FIXTURE,
         {},
         "record_id",
@@ -230,11 +266,11 @@ def test_identifier_column_requested_as_an_analysis_column_stays_out_of_the_anal
 
 
 def test_no_identifier_column_is_reported_when_none_is_designated():
-    response = request_pattern_summary(client, PATTERN_FIXTURE, ["email"])
+    status = run_pattern_analysis(client, PATTERN_FIXTURE, ["email"])
 
-    assert response.status_code == 200
-    assert response.json()["identifier_column"] is None
-    assert response.json()["analysis_columns"] == ["email"]
+    assert status["state"] == "succeeded"
+    assert status["result"]["identifier_column"] is None
+    assert status["result"]["analysis_columns"] == ["email"]
 
 
 def test_default_missing_rules_apply_to_pattern_statuses():
@@ -247,10 +283,10 @@ def test_default_missing_rules_apply_to_pattern_statuses():
         b"Ada,3\n"
     )
 
-    response = request_pattern_summary(client, csv_bytes, ["name", "amount"])
+    status = run_pattern_analysis(client, csv_bytes, ["name", "amount"])
 
-    assert response.status_code == 200
-    assert response.json()["patterns"] == [
+    assert status["state"] == "succeeded"
+    assert status["result"]["patterns"] == [
         {"statuses": ["missing", "present"], "count": 3, "share": 0.75},
         {"statuses": ["present", "present"], "count": 1, "share": 0.25},
     ]
@@ -265,10 +301,10 @@ def test_custom_markers_match_after_trimming_and_without_case():
         b"kept,x\n"
     )
 
-    response = request_pattern_summary(client, csv_bytes, ["value", "other"], {"value": ["  n/A  "]})
+    status = run_pattern_analysis(client, csv_bytes, ["value", "other"], {"value": ["  n/A  "]})
 
-    assert response.status_code == 200
-    assert response.json()["patterns"] == [
+    assert status["state"] == "succeeded"
+    assert status["result"]["patterns"] == [
         {"statuses": ["missing", "present"], "count": 2, "share": 0.5},
         {"statuses": ["missing", "missing"], "count": 1, "share": 0.25},
         {"statuses": ["present", "present"], "count": 1, "share": 0.25},
@@ -278,18 +314,18 @@ def test_custom_markers_match_after_trimming_and_without_case():
 def test_zero_is_present_unless_configured_as_a_marker():
     csv_bytes = b"amount,tally\n0,1\n1,2\n0,3\n"
 
-    default_response = request_pattern_summary(client, csv_bytes, ["amount", "tally"])
-    marker_response = request_pattern_summary(
+    default_status = run_pattern_analysis(client, csv_bytes, ["amount", "tally"])
+    marker_status = run_pattern_analysis(
         client, csv_bytes, ["amount", "tally"], {"amount": ["0"]}
     )
 
-    assert default_response.status_code == 200
-    assert default_response.json()["patterns"] == [
+    assert default_status["state"] == "succeeded"
+    assert default_status["result"]["patterns"] == [
         {"statuses": ["present", "present"], "count": 3, "share": 1.0},
     ]
 
-    assert marker_response.status_code == 200
-    assert marker_response.json()["patterns"] == [
+    assert marker_status["state"] == "succeeded"
+    assert marker_status["result"]["patterns"] == [
         {"statuses": ["missing", "present"], "count": 2, "share": 2 / 3},
         {"statuses": ["present", "present"], "count": 1, "share": 1 / 3},
     ]
@@ -303,10 +339,10 @@ def test_patterns_with_equal_counts_are_ordered_deterministically():
         b"x,y\n"
     )
 
-    response = request_pattern_summary(client, csv_bytes, ["a", "b"])
+    status = run_pattern_analysis(client, csv_bytes, ["a", "b"])
 
-    assert response.status_code == 200
-    assert response.json()["patterns"] == [
+    assert status["state"] == "succeeded"
+    assert status["result"]["patterns"] == [
         {"statuses": ["missing", "present"], "count": 1, "share": 1 / 3},
         {"statuses": ["present", "missing"], "count": 1, "share": 1 / 3},
         {"statuses": ["present", "present"], "count": 1, "share": 1 / 3},
@@ -314,17 +350,17 @@ def test_patterns_with_equal_counts_are_ordered_deterministically():
 
 
 def test_pattern_summary_reports_columns_in_the_requested_order():
-    response = request_pattern_summary(
+    status = run_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["amount", "email"],
         identifier_column="record_id",
     )
 
-    assert response.status_code == 200
-    assert response.json()["analysis_columns"] == ["amount", "email"]
+    assert status["state"] == "succeeded"
+    assert status["result"]["analysis_columns"] == ["amount", "email"]
     assert_matches_reference(
-        response.json(),
+        status["result"],
         PATTERN_FIXTURE,
         {},
         "record_id",
@@ -335,38 +371,32 @@ def test_pattern_summary_reports_columns_in_the_requested_order():
 def test_hostile_column_names_are_returned_verbatim_as_json_text():
     csv_bytes = b"<script>alert('x')</script>,notes\n1,hello\n"
 
-    response = request_pattern_summary(
+    status = run_pattern_analysis(
         client,
         csv_bytes,
         ["<script>alert('x')</script>", "notes"],
         file_name="hostile.csv",
     )
+    status_response = client.get(f"/api/analysis-jobs/{status['job_id']}")
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/json")
-    assert response.json()["analysis_columns"] == ["<script>alert('x')</script>", "notes"]
+    assert status["state"] == "succeeded"
+    assert status_response.headers["content-type"].startswith("application/json")
+    assert status["result"]["analysis_columns"] == ["<script>alert('x')</script>", "notes"]
 
 
-def test_summary_rejects_a_missing_analysis_columns_field():
-    response = client.post(
-        "/api/pattern-summary",
-        files={"file": ("data.csv", PATTERN_FIXTURE, "text/csv")},
-    )
+def test_analysis_rejects_a_missing_analysis_columns_field():
+    response = start_analysis_job(client, "data.csv", PATTERN_FIXTURE, {})
 
     assert response.status_code == 400
     assert "columns to analyze" in response.json()["detail"].lower()
 
 
-def test_summary_rejects_analysis_columns_that_are_not_a_list_of_strings():
-    not_a_list_response = client.post(
-        "/api/pattern-summary",
-        files={"file": ("data.csv", PATTERN_FIXTURE, "text/csv")},
-        data={"analysis_columns": '{"email": true}'},
+def test_analysis_rejects_analysis_columns_that_are_not_a_list_of_strings():
+    not_a_list_response = start_analysis_job(
+        client, "data.csv", PATTERN_FIXTURE, {"analysis_columns": '{"email": true}'}
     )
-    not_strings_response = client.post(
-        "/api/pattern-summary",
-        files={"file": ("data.csv", PATTERN_FIXTURE, "text/csv")},
-        data={"analysis_columns": '["email", 3]'},
+    not_strings_response = start_analysis_job(
+        client, "data.csv", PATTERN_FIXTURE, {"analysis_columns": '["email", 3]'}
     )
 
     assert not_a_list_response.status_code == 400
@@ -375,30 +405,30 @@ def test_summary_rejects_analysis_columns_that_are_not_a_list_of_strings():
     assert "columns to analyze" in not_strings_response.json()["detail"].lower()
 
 
-def test_summary_rejects_an_empty_list_of_analysis_columns():
-    response = request_pattern_summary(client, PATTERN_FIXTURE, [])
+def test_analysis_rejects_an_empty_list_of_analysis_columns():
+    response = request_pattern_analysis(client, PATTERN_FIXTURE, [])
 
     assert response.status_code == 400
     assert "at least one column" in response.json()["detail"].lower()
 
 
-def test_summary_rejects_analysis_columns_that_are_not_in_the_file():
-    response = request_pattern_summary(client, PATTERN_FIXTURE, ["email", "nickname"])
+def test_analysis_rejects_analysis_columns_that_are_not_in_the_file():
+    response = request_pattern_analysis(client, PATTERN_FIXTURE, ["email", "nickname"])
 
     assert response.status_code == 400
     assert "nickname" in response.json()["detail"]
 
 
-def test_summary_rejects_an_analysis_column_selected_more_than_once():
-    response = request_pattern_summary(client, PATTERN_FIXTURE, ["email", "email"])
+def test_analysis_rejects_an_analysis_column_selected_more_than_once():
+    response = request_pattern_analysis(client, PATTERN_FIXTURE, ["email", "email"])
 
     assert response.status_code == 400
     assert "email" in response.json()["detail"]
     assert "more than once" in response.json()["detail"].lower()
 
 
-def test_summary_rejects_an_identifier_column_that_is_not_in_the_file():
-    response = request_pattern_summary(
+def test_analysis_rejects_an_identifier_column_that_is_not_in_the_file():
+    response = request_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["email"],
@@ -409,8 +439,8 @@ def test_summary_rejects_an_identifier_column_that_is_not_in_the_file():
     assert "nickname" in response.json()["detail"]
 
 
-def test_summary_rejects_a_selection_that_leaves_no_column_to_analyze():
-    response = request_pattern_summary(
+def test_analysis_rejects_a_selection_that_leaves_no_column_to_analyze():
+    response = request_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["record_id"],
@@ -421,8 +451,8 @@ def test_summary_rejects_a_selection_that_leaves_no_column_to_analyze():
     assert "at least one column" in response.json()["detail"].lower()
 
 
-def test_summary_rejects_missing_markers_for_unknown_columns_with_clear_error():
-    response = request_pattern_summary(
+def test_analysis_rejects_missing_markers_for_unknown_columns_with_clear_error():
+    response = request_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["email"],
@@ -433,71 +463,79 @@ def test_summary_rejects_missing_markers_for_unknown_columns_with_clear_error():
     assert "nickname" in response.json()["detail"]
 
 
-def test_summary_rejects_empty_header_only_malformed_and_unsupported_files():
-    empty_response = request_pattern_summary(client, b"", [], file_name="empty.csv")
-    header_only_response = request_pattern_summary(
-        client, b"name,amount\n", ["name"], file_name="header-only.csv"
-    )
-    malformed_response = request_pattern_summary(
+def test_analysis_rejects_empty_malformed_and_unsupported_files():
+    empty_response = request_pattern_analysis(client, b"", [], file_name="empty.csv")
+    malformed_response = request_pattern_analysis(
         client, b"name,amount\nAda,1\nBob\n", ["name"], file_name="broken.csv"
     )
-    unsupported_response = request_pattern_summary(
+    unsupported_response = request_pattern_analysis(
         client, b"not-a-workbook", ["name"], file_name="workbook.xls"
     )
 
     assert empty_response.status_code == 400
     assert "empty" in empty_response.json()["detail"].lower()
-    assert header_only_response.status_code == 400
-    assert "input rows" in header_only_response.json()["detail"].lower()
     assert malformed_response.status_code == 400
     assert "csv" in malformed_response.json()["detail"].lower()
     assert unsupported_response.status_code == 415
     assert "csv" in unsupported_response.json()["detail"].lower()
 
 
-def test_each_request_reports_the_summary_of_the_uploaded_file_only():
+def test_analysis_of_a_header_only_file_fails_with_a_clear_error():
+    status = run_pattern_analysis(
+        client,
+        b"name,amount\n",
+        ["name"],
+        file_name="header-only.csv",
+    )
+
+    assert status["state"] == "failed"
+    assert "input rows" in status["error"].lower()
+
+
+def test_each_analysis_reports_the_summary_of_the_uploaded_file_only():
     other_fixture = b"record_id,name\nA,x\nA,\n"
 
-    first_response = request_pattern_summary(
+    first_status = run_pattern_analysis(
         client,
         PATTERN_FIXTURE,
         ["email"],
         identifier_column="record_id",
     )
-    second_response = request_pattern_summary(
+    second_status = run_pattern_analysis(
         client,
         other_fixture,
         ["name"],
         identifier_column="record_id",
     )
 
-    assert first_response.status_code == 200
-    assert first_response.json()["input_rows"] == 6
-    assert second_response.status_code == 200
-    assert second_response.json()["input_rows"] == 2
-    assert_matches_reference(second_response.json(), other_fixture, {}, "record_id", ["name"])
+    assert first_status["state"] == "succeeded"
+    assert first_status["result"]["input_rows"] == 6
+    assert second_status["state"] == "succeeded"
+    assert second_status["result"]["input_rows"] == 2
+    assert_matches_reference(second_status["result"], other_fixture, {}, "record_id", ["name"])
 
 
-def test_successful_summary_leaves_no_working_files_behind(tmp_path):
+def test_successful_analysis_leaves_no_working_files_behind(tmp_path):
     work_directory = tmp_path / "work"
     test_client = make_test_client(work_directory)
 
-    response = request_pattern_summary(
+    creation_response = request_pattern_analysis(
         test_client,
         PATTERN_FIXTURE,
         ["email", "phone"],
         identifier_column="record_id",
     )
+    status = await_analysis_job(test_client, creation_response.json()["job_id"])
 
-    assert response.status_code == 200
+    assert status["state"] == "succeeded"
     assert_no_working_files_left(work_directory)
 
 
-def test_failed_summary_leaves_no_working_files_behind(tmp_path):
+def test_failed_analysis_start_leaves_no_working_files_behind(tmp_path):
     work_directory = tmp_path / "work"
     test_client = make_test_client(work_directory)
 
-    response = request_pattern_summary(test_client, PATTERN_FIXTURE, ["nickname"])
+    response = request_pattern_analysis(test_client, PATTERN_FIXTURE, ["nickname"])
 
     assert response.status_code == 400
     assert_no_working_files_left(work_directory)

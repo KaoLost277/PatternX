@@ -5,7 +5,13 @@ import zipfile
 from fastapi.testclient import TestClient
 
 from app.main import app
-from support import assert_no_working_files_left, make_test_client, make_workbook_bytes
+from support import (
+    assert_no_working_files_left,
+    make_test_client,
+    make_workbook_bytes,
+    run_analysis_job,
+    start_analysis_job,
+)
 
 client = TestClient(app)
 
@@ -71,7 +77,7 @@ def request_column_completeness(
     )
 
 
-def request_pattern_summary(
+def run_pattern_analysis(
     test_client,
     file_name,
     file_bytes,
@@ -80,6 +86,7 @@ def request_pattern_summary(
     missing_markers_by_column=None,
     identifier_column=None,
 ):
+    """Run one full analysis job for the file and return its finished status."""
     form_fields = {"analysis_columns": json.dumps(analysis_columns)}
     if sheet is not None:
         form_fields["sheet"] = sheet
@@ -88,11 +95,7 @@ def request_pattern_summary(
     if identifier_column is not None:
         form_fields["identifier_column"] = identifier_column
 
-    return test_client.post(
-        "/api/pattern-summary",
-        files={"file": (file_name, file_bytes, XLSX_CONTENT_TYPE)},
-        data=form_fields,
-    )
+    return run_analysis_job(test_client, file_name, file_bytes, form_fields)
 
 
 def make_row_limit_workbook_bytes(data_rows: int) -> bytes:
@@ -173,8 +176,11 @@ def test_analysis_requires_exactly_one_chosen_worksheet():
     workbook_bytes = make_workbook_bytes({"Data": [["id", "name"], [1, "Ada"]]})
 
     completeness_response = request_column_completeness(client, "workbook.xlsx", workbook_bytes)
-    pattern_response = request_pattern_summary(
-        client, "workbook.xlsx", workbook_bytes, ["name"], sheet=None
+    pattern_response = start_analysis_job(
+        client,
+        "workbook.xlsx",
+        workbook_bytes,
+        {"analysis_columns": json.dumps(["name"])},
     )
 
     assert completeness_response.status_code == 400
@@ -269,7 +275,7 @@ def test_pattern_summary_on_a_sheet_matches_the_same_data_as_csv():
     workbook_bytes = make_workbook_bytes({"Data": SHEET_ROWS})
     missing_markers_by_column = {"email": ["unknown"], "amount": ["-"]}
 
-    workbook_response = request_pattern_summary(
+    workbook_status = run_pattern_analysis(
         client,
         "workbook.xlsx",
         workbook_bytes,
@@ -278,20 +284,19 @@ def test_pattern_summary_on_a_sheet_matches_the_same_data_as_csv():
         missing_markers_by_column=missing_markers_by_column,
         identifier_column="record_id",
     )
-    csv_response = client.post(
-        "/api/pattern-summary",
-        files={"file": ("data.csv", SAME_DATA_AS_CSV, "text/csv")},
-        data={
-            "analysis_columns": json.dumps(["email", "phone", "amount"]),
-            "missing_markers": json.dumps(missing_markers_by_column),
-            "identifier_column": "record_id",
-        },
+    csv_status = run_pattern_analysis(
+        client,
+        "data.csv",
+        SAME_DATA_AS_CSV,
+        ["email", "phone", "amount"],
+        missing_markers_by_column=missing_markers_by_column,
+        identifier_column="record_id",
     )
 
-    assert workbook_response.status_code == 200
-    assert csv_response.status_code == 200
-    assert workbook_response.json() == csv_response.json()
-    assert workbook_response.json()["input_rows"] == 6
+    assert workbook_status["state"] == "succeeded"
+    assert csv_status["state"] == "succeeded"
+    assert workbook_status["result"] == csv_status["result"]
+    assert workbook_status["result"]["input_rows"] == 6
 
 
 def test_empty_rows_in_a_multi_column_worksheet_are_not_input_rows():

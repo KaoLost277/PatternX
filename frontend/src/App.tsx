@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import "./App.css";
 
@@ -26,6 +26,21 @@ interface PatternSummary {
   identifier_column: string | null;
   analysis_columns: string[];
   patterns: CompletenessPattern[];
+}
+
+interface AnalysisJobProgress {
+  rows_done: number;
+  rows_total: number;
+}
+
+interface AnalysisJobStatus {
+  job_id: string;
+  state: string;
+  stage: string | null;
+  elapsed_seconds: number;
+  progress: AnalysisJobProgress | null;
+  result: PatternSummary | null;
+  error: string | null;
 }
 
 interface ImportResponse {
@@ -82,13 +97,14 @@ async function fetchColumnCompleteness(
   );
 }
 
-async function fetchPatternSummary(
+async function startAnalysisJob(
   file: File,
   missingValueMarkers: Record<string, string[]>,
   worksheetName: string,
   identifierColumn: string,
   analysisColumns: string[],
-): Promise<PatternSummary> {
+  highCardinalityAcknowledged: boolean,
+): Promise<AnalysisJobStatus> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("missing_markers", JSON.stringify(missingValueMarkers));
@@ -99,11 +115,27 @@ async function fetchPatternSummary(
     formData.append("identifier_column", identifierColumn);
   }
   formData.append("analysis_columns", JSON.stringify(analysisColumns));
+  if (highCardinalityAcknowledged) {
+    formData.append("high_cardinality_acknowledged", "true");
+  }
 
-  const response = await fetch("/api/pattern-summary", { method: "POST", body: formData });
-  return await readResponseBody<PatternSummary>(
+  const response = await fetch("/api/analysis-jobs", { method: "POST", body: formData });
+  return await readResponseBody<AnalysisJobStatus>(response, "The analysis could not be started.");
+}
+
+async function fetchAnalysisJobStatus(jobId: string): Promise<AnalysisJobStatus> {
+  const response = await fetch(`/api/analysis-jobs/${jobId}`);
+  return await readResponseBody<AnalysisJobStatus>(
     response,
-    "The pattern summary could not be computed.",
+    "The analysis status could not be read.",
+  );
+}
+
+async function cancelAnalysisJob(jobId: string): Promise<AnalysisJobStatus> {
+  const response = await fetch(`/api/analysis-jobs/${jobId}/cancel`, { method: "POST" });
+  return await readResponseBody<AnalysisJobStatus>(
+    response,
+    "The analysis could not be cancelled.",
   );
 }
 
@@ -136,6 +168,17 @@ const PATTERN_FILTER_ANY = "any";
 const PATTERN_STATUS_PRESENT = "present";
 const PATTERN_STATUS_MISSING = "missing";
 const MOST_COMMON_PATTERNS_SHOWN = 10;
+
+const JOB_STATE_RUNNING = "running";
+const JOB_STATE_SUCCEEDED = "succeeded";
+const JOB_STATE_FAILED = "failed";
+const JOB_STATE_CANCELLED = "cancelled";
+
+// The API refuses to start an unacknowledged analysis at this column count,
+// because 2^columns possible Completeness Patterns make it a very large job.
+const HIGH_CARDINALITY_COLUMN_THRESHOLD = 20;
+
+const JOB_POLL_INTERVAL_MILLISECONDS = 500;
 
 function withoutIdentifierColumn(
   analysisColumns: string[],
@@ -198,6 +241,10 @@ function formatCountAndShare(count: number, share: number, inputRows: number): s
   return `${count} of ${inputRows} (${formatShare(share)})`;
 }
 
+function formatElapsedSeconds(elapsedSeconds: number): string {
+  return `${elapsedSeconds.toFixed(1)} seconds`;
+}
+
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
@@ -221,6 +268,8 @@ function App() {
   const [identifierColumn, setIdentifierColumn] = useState<string>("");
   const [analysisColumns, setAnalysisColumns] = useState<string[]>([]);
   const [patternSummary, setPatternSummary] = useState<PatternSummary | null>(null);
+  const [analysisJob, setAnalysisJob] = useState<AnalysisJobStatus | null>(null);
+  const [highCardinalityAcknowledged, setHighCardinalityAcknowledged] = useState<boolean>(false);
   const [patternStatusFilters, setPatternStatusFilters] = useState<Record<string, string>>({});
   const [showAllPatterns, setShowAllPatterns] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -272,30 +321,51 @@ function App() {
     }
   }
 
-  async function loadPatternSummary(
+  function applyFinishedAnalysis(jobStatus: AnalysisJobStatus) {
+    if (jobStatus.state === JOB_STATE_SUCCEEDED && jobStatus.result !== null) {
+      setPatternSummary(jobStatus.result);
+      setPatternStatusFilters({});
+      setShowAllPatterns(false);
+      setStatusMessage(null);
+      return;
+    }
+    if (jobStatus.state === JOB_STATE_FAILED) {
+      setErrorMessage(jobStatus.error ?? "The analysis failed.");
+      setStatusMessage(null);
+      return;
+    }
+    if (jobStatus.state === JOB_STATE_CANCELLED) {
+      setStatusMessage("The analysis was cancelled. No results were kept.");
+    }
+  }
+
+  async function startPatternAnalysis(
     file: File,
     missingValueMarkers: Record<string, string[]>,
     worksheetName: string,
     identifierColumnToUse: string,
     analysisColumnsToUse: string[],
   ) {
-    setStatusMessage("Computing the completeness summary...");
+    setStatusMessage("Starting the analysis...");
 
     const startedRequest = beginRequest();
     try {
-      const computedPatternSummary = await fetchPatternSummary(
+      const jobStatus = await startAnalysisJob(
         file,
         missingValueMarkers,
         worksheetName,
         identifierColumnToUse,
         analysisColumnsToUse,
+        highCardinalityAcknowledged,
       );
       if (!isCurrentRequest(startedRequest)) {
         return;
       }
-      setPatternSummary(computedPatternSummary);
+      // Results of an earlier analysis never survive into a newer one.
+      setPatternSummary(null);
       setPatternStatusFilters({});
       setShowAllPatterns(false);
+      setAnalysisJob(jobStatus);
       setStatusMessage(null);
     } catch (error) {
       if (isCurrentRequest(startedRequest)) {
@@ -314,6 +384,8 @@ function App() {
     setIdentifierColumn("");
     setAnalysisColumns([]);
     setPatternSummary(null);
+    setAnalysisJob(null);
+    setHighCardinalityAcknowledged(false);
     setPatternStatusFilters({});
     setShowAllPatterns(false);
     setErrorMessage(null);
@@ -434,13 +506,31 @@ function App() {
     }
 
     setErrorMessage(null);
-    await loadPatternSummary(
+    await startPatternAnalysis(
       selectedFile,
       appliedMissingValueMarkers,
       selectedSheet,
       identifierColumn,
       columnsToAnalyze,
     );
+  }
+
+  function handleHighCardinalityAcknowledgementChanged(event: ChangeEvent<HTMLInputElement>) {
+    setHighCardinalityAcknowledged(event.target.checked);
+  }
+
+  async function handleCancelAnalysis() {
+    if (analysisJob === null) {
+      return;
+    }
+
+    try {
+      const jobStatus = await cancelAnalysisJob(analysisJob.job_id);
+      setAnalysisJob(jobStatus);
+      applyFinishedAnalysis(jobStatus);
+    } catch (error) {
+      handleRequestFailure(error);
+    }
   }
 
   function handlePatternFilterChanged(columnName: string, status: string) {
@@ -459,7 +549,39 @@ function App() {
     setShowAllPatterns((previousShowAll) => !previousShowAll);
   }
 
+  // While an analysis runs, keep reading its status so the user sees progress
+  // and the finished summary without refreshing. The poll follows the job
+  // identity and its running state only; changes inside the job arrive through
+  // the polling itself.
+  const runningAnalysisJobId = analysisJob?.job_id ?? null;
+  const analysisRunning = analysisJob !== null && analysisJob.state === JOB_STATE_RUNNING;
+
+  useEffect(() => {
+    if (runningAnalysisJobId === null || !analysisRunning) {
+      return;
+    }
+
+    const pollTimer = window.setInterval(async () => {
+      try {
+        const jobStatus = await fetchAnalysisJobStatus(runningAnalysisJobId);
+        setAnalysisJob(jobStatus);
+        applyFinishedAnalysis(jobStatus);
+      } catch (error) {
+        handleRequestFailure(error);
+      }
+    }, JOB_POLL_INTERVAL_MILLISECONDS);
+
+    return () => window.clearInterval(pollTimer);
+  }, [runningAnalysisJobId, analysisRunning]);
+
   const columnsToAnalyze = withoutIdentifierColumn(analysisColumns, identifierColumn);
+  const highCardinalityWarningRequired =
+    columnsToAnalyze.length >= HIGH_CARDINALITY_COLUMN_THRESHOLD;
+  const computeButtonDisabled =
+    statusMessage !== null ||
+    columnsToAnalyze.length === 0 ||
+    analysisRunning ||
+    (highCardinalityWarningRequired && !highCardinalityAcknowledged);
   const matchedPatterns = patternSummary
     ? patternsMatchingFilters(
         patternSummary.patterns,
@@ -649,12 +771,28 @@ function App() {
                 </fieldset>
               </div>
 
+              {highCardinalityWarningRequired && (
+                <div className="warning-panel">
+                  <p className="warning-heading">This analysis has a very large pattern space</p>
+                  <p className="hint-text">
+                    Selecting {columnsToAnalyze.length} columns allows up to{" "}
+                    {(2n ** BigInt(columnsToAnalyze.length)).toLocaleString()} distinct Completeness
+                    Patterns. Review your selection, then acknowledge this warning before the
+                    analysis starts.
+                  </p>
+                  <label className="acknowledgement-option">
+                    <input
+                      type="checkbox"
+                      checked={highCardinalityAcknowledged}
+                      onChange={handleHighCardinalityAcknowledgementChanged}
+                    />
+                    <span>I understand the size of this analysis and want to start it.</span>
+                  </label>
+                </div>
+              )}
+
               <div className="summary-actions">
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={statusMessage !== null || columnsToAnalyze.length === 0}
-                >
+                <button type="submit" className="primary-button" disabled={computeButtonDisabled}>
                   Compute completeness summary
                 </button>
                 <p className="hint-text">
@@ -662,6 +800,38 @@ function App() {
                   pattern as a problem.
                 </p>
               </div>
+
+              {analysisJob !== null && analysisJob.state === JOB_STATE_RUNNING && (
+                <div className="progress-panel">
+                  <p className="status-line">
+                    {analysisJob.stage ?? "Working on the analysis"}:{" "}
+                    {formatElapsedSeconds(analysisJob.elapsed_seconds)} elapsed.
+                  </p>
+                  {analysisJob.progress !== null && (
+                    <div className="progress-track">
+                      <progress
+                        className="analysis-progress"
+                        value={analysisJob.progress.rows_done}
+                        max={analysisJob.progress.rows_total}
+                      />
+                      <p className="hint-text">
+                        {analysisJob.progress.rows_done.toLocaleString()} of{" "}
+                        {analysisJob.progress.rows_total.toLocaleString()} Input Rows grouped into
+                        Completeness Patterns.
+                      </p>
+                    </div>
+                  )}
+                  <div className="summary-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleCancelAnalysis}
+                    >
+                      Cancel the analysis
+                    </button>
+                  </div>
+                </div>
+              )}
             </form>
 
             {patternSummary && (

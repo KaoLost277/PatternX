@@ -44,6 +44,18 @@ def clean_up_request(work_directory: Path, request_directory: Path) -> None:
     clear_duckdb_working_directory(work_directory)
 
 
+def new_job_directory(work_directory: Path, job_id: str) -> Path:
+    """Create a private directory for one analysis job's raw file and working data."""
+    job_directory = uploads_directory(work_directory) / f"job-{job_id}"
+    job_directory.mkdir(parents=True, exist_ok=False)
+    return job_directory
+
+
+def clean_up_job(job_directory: Path) -> None:
+    """Remove everything one analysis job left behind, on every outcome."""
+    shutil.rmtree(job_directory, ignore_errors=True)
+
+
 def clear_duckdb_working_directory(work_directory: Path) -> None:
     working_directory = duckdb_working_directory(work_directory)
     shutil.rmtree(working_directory, ignore_errors=True)

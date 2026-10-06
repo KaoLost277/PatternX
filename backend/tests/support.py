@@ -1,14 +1,19 @@
 import io
+import time
 from pathlib import Path
 
 import openpyxl
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from app.main import create_application
 
 
-def make_test_client(work_directory: Path) -> TestClient:
-    application = create_application(work_directory)
+def make_test_client(work_directory: Path, analysis_batch_rows: int | None = None) -> TestClient:
+    if analysis_batch_rows is None:
+        application = create_application(work_directory)
+    else:
+        application = create_application(work_directory, analysis_batch_rows=analysis_batch_rows)
     return TestClient(application)
 
 
@@ -28,6 +33,48 @@ def make_workbook_bytes(sheets: dict[str, list[list[object]]]) -> bytes:
     workbook_buffer = io.BytesIO()
     workbook.save(workbook_buffer)
     return workbook_buffer.getvalue()
+
+
+def start_analysis_job(
+    test_client: TestClient,
+    file_name: str,
+    file_bytes: bytes,
+    form_fields: dict[str, str],
+) -> Response:
+    """Start one analysis job through the API and return its creation response."""
+    return test_client.post(
+        "/api/analysis-jobs",
+        files={"file": (file_name, file_bytes, "text/csv")},
+        data=form_fields,
+    )
+
+
+def await_analysis_job(
+    test_client: TestClient,
+    job_id: str,
+    timeout_seconds: float = 30.0,
+) -> dict[str, object]:
+    """Poll one analysis job until it is finished and return its status payload."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        status = test_client.get(f"/api/analysis-jobs/{job_id}").json()
+        if status["state"] != "running":
+            return status
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"The analysis job {job_id} did not finish in time.")
+        time.sleep(0.01)
+
+
+def run_analysis_job(
+    test_client: TestClient,
+    file_name: str,
+    file_bytes: bytes,
+    form_fields: dict[str, str],
+) -> dict[str, object]:
+    """Start one analysis job, wait for it to finish, and return its status payload."""
+    creation_response = start_analysis_job(test_client, file_name, file_bytes, form_fields)
+    assert creation_response.status_code == 201
+    return await_analysis_job(test_client, creation_response.json()["job_id"])
 
 
 def assert_no_working_files_left(work_directory: Path) -> None:
