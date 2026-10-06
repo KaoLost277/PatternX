@@ -18,7 +18,11 @@ from pathlib import Path
 
 import duckdb
 
-from app.completeness import UNREADABLE_CSV_MESSAGE
+from app.completeness import (
+    UNREADABLE_CSV_MESSAGE,
+    ColumnCompletenessSummary,
+    summarize_column_completeness,
+)
 from app.patterns import (
     AnalysisCancelledError,
     AnalysisInputs,
@@ -32,6 +36,7 @@ JOB_STATE_SUCCEEDED = "succeeded"
 JOB_STATE_FAILED = "failed"
 JOB_STATE_CANCELLED = "cancelled"
 
+STAGE_COLUMN_COMPLETENESS = "Computing the Column Completeness Summary"
 STAGE_COUNTING_INPUT_ROWS = "Counting Input Rows"
 STAGE_GROUPING_INPUT_ROWS = "Grouping Input Rows by Completeness Pattern"
 
@@ -52,6 +57,14 @@ class AnalysisProgress:
 
 
 @dataclass(frozen=True)
+class AnalysisJobResult:
+    """The exact summaries one finished analysis produced."""
+
+    pattern_summary: PatternSummary
+    column_completeness: ColumnCompletenessSummary
+
+
+@dataclass(frozen=True)
 class AnalysisJobStatus:
     """A consistent view of one job's progress, result, and error."""
 
@@ -60,7 +73,7 @@ class AnalysisJobStatus:
     stage: str | None
     elapsed_seconds: float
     progress: AnalysisProgress | None
-    summary: PatternSummary | None
+    result: AnalysisJobResult | None
     error: str | None
 
 
@@ -80,9 +93,9 @@ class AnalysisJob:
         self.rows_per_batch = rows_per_batch
 
         self.state = JOB_STATE_RUNNING
-        self.stage = STAGE_COUNTING_INPUT_ROWS
+        self.stage = STAGE_COLUMN_COMPLETENESS
         self.progress: AnalysisProgress | None = None
-        self.summary: PatternSummary | None = None
+        self.result: AnalysisJobResult | None = None
         self.error: str | None = None
 
         self.started_at = time.monotonic()
@@ -120,6 +133,10 @@ class AnalysisJob:
             self.stage = STAGE_GROUPING_INPUT_ROWS
             self.progress = AnalysisProgress(rows_done=rows_done, rows_total=rows_total)
 
+    def set_stage(self, stage: str) -> None:
+        with self._lock:
+            self.stage = stage
+
     def status_snapshot(self) -> AnalysisJobStatus:
         with self._lock:
             if self._final_elapsed_seconds is None:
@@ -136,12 +153,15 @@ class AnalysisJob:
                 stage=stage,
                 elapsed_seconds=elapsed_seconds,
                 progress=self.progress,
-                summary=self.summary,
+                result=self.result,
                 error=self.error,
             )
 
     def _run_analysis(self) -> None:
         connection: duckdb.DuckDBPyConnection | None = None
+        final_state = JOB_STATE_FAILED
+        result: AnalysisJobResult | None = None
+        error: str | None = None
         try:
             connection = duckdb.connect(
                 config={"temp_directory": str(self.analysis_inputs.duckdb_directory)}
@@ -149,39 +169,54 @@ class AnalysisJob:
             with self._lock:
                 self._connection = connection
 
-            summary = compute_pattern_summary(
+            self.set_stage(STAGE_COLUMN_COMPLETENESS)
+            column_completeness = summarize_column_completeness(
+                connection,
+                self.analysis_inputs.analysis_csv_path,
+                self.analysis_inputs.column_names,
+                self.analysis_inputs.missing_markers_by_column,
+            )
+
+            self.set_stage(STAGE_COUNTING_INPUT_ROWS)
+            pattern_summary = compute_pattern_summary(
                 connection,
                 self.analysis_inputs,
                 progress_reporter=self.report_progress,
                 cancellation_check=self.is_cancel_requested,
                 rows_per_batch=self.rows_per_batch,
             )
+            result = AnalysisJobResult(
+                pattern_summary=pattern_summary,
+                column_completeness=column_completeness,
+            )
+            final_state = JOB_STATE_SUCCEEDED
         except AnalysisCancelledError:
-            self._finish(JOB_STATE_CANCELLED, summary=None, error=None)
+            final_state = JOB_STATE_CANCELLED
         except duckdb.InterruptException:
             # The cancel request interrupted a running query.
-            self._finish(JOB_STATE_CANCELLED, summary=None, error=None)
+            final_state = JOB_STATE_CANCELLED
         except duckdb.Error:
-            self._finish(JOB_STATE_FAILED, summary=None, error=UNREADABLE_CSV_MESSAGE)
-        except ValueError as error:
+            error = UNREADABLE_CSV_MESSAGE
+        except ValueError as domain_error:
             # The engine's own validation errors already carry a clear message.
-            self._finish(JOB_STATE_FAILED, summary=None, error=str(error))
-        except Exception as error:
-            self._finish(JOB_STATE_FAILED, summary=None, error=f"The analysis failed: {error}")
-        else:
-            self._finish(JOB_STATE_SUCCEEDED, summary=summary, error=None)
+            error = str(domain_error)
+        except Exception as unexpected_error:
+            error = f"The analysis failed: {unexpected_error}"
         finally:
             with self._lock:
                 self._connection = None
                 if connection is not None:
                     connection.close()
-            # The raw file and all working data are gone after every outcome.
+            # The raw file and all working data are gone after every outcome,
+            # and only then is the final state reported: a job that can be seen
+            # as finished has nothing left on disk.
             clean_up_job(self.job_directory)
+            self._finish(final_state, result=result, error=error)
 
-    def _finish(self, state: str, summary: PatternSummary | None, error: str | None) -> None:
+    def _finish(self, state: str, result: AnalysisJobResult | None, error: str | None) -> None:
         with self._lock:
             self.state = state
-            self.summary = summary
+            self.result = result
             self.error = error
             self._final_elapsed_seconds = time.monotonic() - self.started_at
 

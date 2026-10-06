@@ -95,19 +95,34 @@ def compute_column_completeness(
 ) -> ColumnCompletenessSummary:
     """Count Input Rows with a present value for every column of the file."""
     column_names = read_column_names(raw_file_path, duckdb_directory)
-    reject_markers_for_unknown_columns(column_names, missing_markers_by_column)
-
     connection = duckdb.connect(config={"temp_directory": str(duckdb_directory)})
     try:
-        query = build_completeness_query(column_names, missing_markers_by_column)
-        # Marker values bind first: their placeholders come before the file path
-        # placeholder in the query text.
-        query_parameters = collect_marker_parameters(column_names, missing_markers_by_column)
-        query_parameters.append(str(raw_file_path))
-        cursor = connection.execute(query, query_parameters)
-        result_row = cursor.fetchone()
+        return summarize_column_completeness(
+            connection,
+            raw_file_path,
+            column_names,
+            missing_markers_by_column,
+        )
     finally:
         connection.close()
+
+
+def summarize_column_completeness(
+    connection: duckdb.DuckDBPyConnection,
+    raw_file_path: Path,
+    column_names: list[str],
+    missing_markers_by_column: dict[str, list[str]],
+) -> ColumnCompletenessSummary:
+    """Count Input Rows with a present value per column over one open connection."""
+    reject_markers_for_unknown_columns(column_names, missing_markers_by_column)
+
+    query = build_completeness_query(column_names, missing_markers_by_column)
+    # Marker values bind first: their placeholders come before the file path
+    # placeholder in the query text.
+    query_parameters = collect_marker_parameters(column_names, missing_markers_by_column)
+    query_parameters.append(str(raw_file_path))
+    cursor = connection.execute(query, query_parameters)
+    result_row = cursor.fetchone()
 
     input_rows = int(result_row[0])
     if input_rows == 0:

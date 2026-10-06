@@ -12,8 +12,9 @@ Summary: for every column, the exact count and share of Input Rows with a presen
 and whitespace-only values are missing by default, additional missing value markers can be configured
 per column, and zero counts as present. The Completeness Summary — every observed Completeness Pattern
 with its exact count and share of Input Rows — runs as a background analysis job with progress,
-elapsed-time reporting, and cancellation. Pattern row previews and the exports follow in later
-tickets.
+elapsed-time reporting, and cancellation, and every finished analysis offers the two summary
+downloads `column_completeness.csv` and `pattern_summary.csv`. Pattern row previews follow in a later
+ticket.
 
 ## Prerequisites
 
@@ -74,6 +75,21 @@ not a performance claim.
 
 Only the most recent analysis job is kept: starting a new analysis cancels and replaces the previous
 one, so results of an earlier import never survive into a newer one.
+
+## Exports
+
+Every finished analysis offers two downloads:
+
+- `column_completeness.csv` — for every column of the file: the Input Rows with a value, the Input
+  Rows missing one, and each share of all Input Rows
+- `pattern_summary.csv` — one row per observed Completeness Pattern: its present/missing statuses,
+  its exact count of Input Rows, and its share of all Input Rows. Every observed pattern is written,
+  whatever their number
+
+Both files hold summary counts and shares only: never raw Input Rows, never row-level details. They
+are UTF-8 CSV with a byte order mark so spreadsheet apps read them as text, shares are written at
+full precision, and a column name a spreadsheet could read as a formula — with or without leading
+whitespace — is prefixed with an apostrophe so it stays inert text.
 
 ## Tests
 

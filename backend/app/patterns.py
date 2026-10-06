@@ -23,7 +23,6 @@ from app.completeness import (
     build_present_expression,
     build_working_columns_option,
     collect_marker_parameters,
-    read_column_names,
     reject_markers_for_unknown_columns,
     working_column_name,
 )
@@ -54,6 +53,7 @@ class AnalysisInputs:
 
     analysis_csv_path: Path
     duckdb_directory: Path
+    column_names: list[str]
     missing_markers_by_column: dict[str, list[str]]
     analysis_columns: list[str]
     identifier_column: str | None
@@ -115,7 +115,7 @@ def compute_pattern_summary(
     when the user cancels the analysis.
     """
     raw_file_path = analysis_inputs.analysis_csv_path
-    column_names = read_column_names(raw_file_path, analysis_inputs.duckdb_directory)
+    column_names = analysis_inputs.column_names
     reject_markers_for_unknown_columns(
         column_names,
         analysis_inputs.missing_markers_by_column,

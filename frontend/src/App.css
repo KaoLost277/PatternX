@@ -295,6 +295,24 @@
   cursor: pointer;
 }
 
+.download-link {
+  display: inline-block;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  color: #334155;
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.download-link:hover {
+  background-color: #e2e8f0;
+  border-color: #94a3b8;
+}
+
 .secondary-button:hover:enabled {
   background-color: #e2e8f0;
   border-color: #94a3b8;

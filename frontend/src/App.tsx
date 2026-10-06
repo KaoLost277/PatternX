@@ -927,6 +927,29 @@ function App() {
                     </p>
                   </div>
                 )}
+
+                {analysisJob !== null && analysisJob.state === JOB_STATE_SUCCEEDED && (
+                  <div className="summary-actions">
+                    <a
+                      className="download-link"
+                      href={`/api/analysis-jobs/${analysisJob.job_id}/exports/column_completeness.csv`}
+                      download
+                    >
+                      Download column_completeness.csv
+                    </a>
+                    <a
+                      className="download-link"
+                      href={`/api/analysis-jobs/${analysisJob.job_id}/exports/pattern_summary.csv`}
+                      download
+                    >
+                      Download pattern_summary.csv
+                    </a>
+                    <p className="hint-text">
+                      Both downloads hold summary counts and shares only — every observed pattern,
+                      with no Input Rows or row-level details.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

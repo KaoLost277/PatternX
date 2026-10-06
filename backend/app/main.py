@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import duckdb
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
 
 from app.analysis_jobs import (
     HIGH_CARDINALITY_COLUMN_THRESHOLD,
@@ -18,6 +18,12 @@ from app.completeness import (
     parse_missing_markers,
     read_column_names,
     reject_markers_for_unknown_columns,
+)
+from app.exports import (
+    COLUMN_COMPLETENESS_EXPORT_NAME,
+    PATTERN_SUMMARY_EXPORT_NAME,
+    column_completeness_csv,
+    pattern_summary_csv,
 )
 from app.patterns import (
     DEFAULT_ANALYSIS_BATCH_ROWS,
@@ -187,11 +193,15 @@ def create_application(
 
     @application.get("/api/analysis-jobs/{job_id}")
     async def get_analysis_job(job_id: str) -> dict[str, object]:
-        job = job_store.find(job_id)
-        if job is None:
-            raise unknown_job_error(job_id)
+        return analysis_job_status_response(find_job_or_raise(job_id))
 
-        return analysis_job_status_response(job)
+    @application.get("/api/analysis-jobs/{job_id}/exports/column_completeness.csv")
+    async def download_column_completeness_export(job_id: str) -> Response:
+        return analysis_export_response(find_job_or_raise(job_id), COLUMN_COMPLETENESS_EXPORT_NAME)
+
+    @application.get("/api/analysis-jobs/{job_id}/exports/pattern_summary.csv")
+    async def download_pattern_summary_export(job_id: str) -> Response:
+        return analysis_export_response(find_job_or_raise(job_id), PATTERN_SUMMARY_EXPORT_NAME)
 
     @application.post("/api/analysis-jobs/{job_id}/cancel")
     async def cancel_analysis_job(job_id: str) -> dict[str, object]:
@@ -200,6 +210,13 @@ def create_application(
             raise unknown_job_error(job_id)
 
         return analysis_job_status_response(job)
+
+    def find_job_or_raise(job_id: str) -> AnalysisJob:
+        job = job_store.find(job_id)
+        if job is None:
+            raise unknown_job_error(job_id)
+
+        return job
 
     return application
 
@@ -239,6 +256,7 @@ def build_analysis_inputs(
     return AnalysisInputs(
         analysis_csv_path=analysis_csv_path,
         duckdb_directory=duckdb_directory,
+        column_names=column_names,
         missing_markers_by_column=missing_markers_by_column,
         analysis_columns=analysis_columns,
         identifier_column=identifier_column_name,
@@ -366,10 +384,10 @@ def analysis_job_status_response(job: AnalysisJob) -> dict[str, object]:
             "rows_total": status.progress.rows_total,
         }
 
-    if status.summary is None:
+    if status.result is None:
         result = None
     else:
-        result = pattern_summary_response(status.summary)
+        result = pattern_summary_response(status.result.pattern_summary)
 
     return {
         "job_id": status.job_id,
@@ -380,6 +398,34 @@ def analysis_job_status_response(job: AnalysisJob) -> dict[str, object]:
         "result": result,
         "error": status.error,
     }
+
+
+def analysis_export_response(job: AnalysisJob, export_name: str) -> Response:
+    """Build one summary download from a finished analysis result."""
+    status = job.status_snapshot()
+    if status.result is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This analysis has no finished summaries to download.",
+        )
+
+    if export_name == COLUMN_COMPLETENESS_EXPORT_NAME:
+        export_text = column_completeness_csv(status.result.column_completeness)
+    elif export_name == PATTERN_SUMMARY_EXPORT_NAME:
+        export_text = pattern_summary_csv(status.result.pattern_summary)
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail=f"There is no export named {export_name!r}.",
+        )
+
+    return Response(
+        # The byte order mark keeps the file readable as UTF-8 in spreadsheet
+        # apps; the content itself is inert text by construction.
+        content=export_text.encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{export_name}"'},
+    )
 
 
 def pattern_summary_response(summary: PatternSummary) -> dict[str, object]:
