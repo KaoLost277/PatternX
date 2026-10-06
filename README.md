@@ -7,10 +7,11 @@ and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
 
 ## Current status
 
-You can import a CSV file and see the Column Completeness Summary: for every column, the exact count
-and share of Input Rows with a present value. Null, empty, and whitespace-only values are missing by
-default, additional missing value markers can be configured per column, and zero counts as present.
-Pattern analysis, exports, and the rest of the workflow follow in later tickets.
+You can import a CSV file or one chosen worksheet of an XLSX workbook and see the Column Completeness
+Summary: for every column, the exact count and share of Input Rows with a present value. Null, empty,
+and whitespace-only values are missing by default, additional missing value markers can be configured
+per column, and zero counts as present. Pattern analysis, exports, and the rest of the workflow
+follow in later tickets.
 
 ## Prerequisites
 
@@ -45,6 +46,18 @@ rows that repeat an identifier value still count separately. A completely blank 
 fields and is not an Input Row; in a one-column file an empty line is a record with one empty value
 and therefore is an Input Row with a missing value.
 
+XLSX workbooks are read one worksheet at a time: the app lists the workbook's worksheets and
+analyzes exactly the one you choose. The first row carrying values is the header row of that
+worksheet, and every following row follows the same Input Row rules as a CSV file line: a row where
+every cell is empty is not an Input Row, except in a one-column worksheet where it is one Input Row
+with a missing value. Cell values are read as text: numbers as their stored numeric value, dates in
+ISO form, booleans as TRUE and FALSE, and formula cells as their formula text, because the
+application never evaluates formulas.
+
+Excel's file format defines a maximum of 1,048,576 worksheet rows, header row included. The
+application reads every row the chosen worksheet holds and never truncates it: a worksheet at the
+limit is counted to its full 1,048,575 data rows. CSV files have no such worksheet row limit.
+
 ## Tests
 
 Install the test tooling once, then run the suite from `backend`:
@@ -63,7 +76,8 @@ cd backend
 The API keeps all transient working data under one work directory
 (`%TEMP%\patternx` on Windows, `/tmp/patternx` on macOS), organized as:
 
-- `uploads/` — raw uploaded files, deleted again as soon as they have been read
+- `uploads/` — one private directory per request, holding the raw uploaded file and the normalized
+  CSV copy of the chosen worksheet; deleted again when the request ends
 - `duckdb/` — DuckDB spill and working files
 
 Nothing in this directory is kept after a request finishes.

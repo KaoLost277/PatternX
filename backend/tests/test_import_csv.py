@@ -15,7 +15,11 @@ def test_import_returns_column_names_in_file_order():
     )
 
     assert response.status_code == 200
-    assert response.json() == {"columns": ["customer_id", "email", "phone"]}
+    assert response.json() == {
+        "sheets": [],
+        "columns": ["customer_id", "email", "phone"],
+        "worksheet_row_limit": None,
+    }
 
 
 def test_import_rejects_empty_file_with_clear_error():
@@ -31,11 +35,12 @@ def test_import_rejects_empty_file_with_clear_error():
 def test_import_rejects_unsupported_file_format_with_clear_error():
     response = client.post(
         "/api/imports",
-        files={"file": ("workbook.xlsx", b"PK\x03\x04not-a-csv", "application/octet-stream")},
+        files={"file": ("workbook.xls", b"not-a-workbook", "application/octet-stream")},
     )
 
     assert response.status_code == 415
     assert "csv" in response.json()["detail"].lower()
+    assert "xlsx" in response.json()["detail"].lower()
 
 
 def test_import_rejects_malformed_file_with_clear_error():
@@ -58,7 +63,11 @@ def test_import_returns_hostile_header_values_verbatim_as_json_text():
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
-    assert response.json() == {"columns": ["<script>alert('x')</script>", "notes"]}
+    assert response.json() == {
+        "sheets": [],
+        "columns": ["<script>alert('x')</script>", "notes"],
+        "worksheet_row_limit": None,
+    }
 
 
 def test_work_directory_contains_uploads_and_duckdb_working_directories(tmp_path):

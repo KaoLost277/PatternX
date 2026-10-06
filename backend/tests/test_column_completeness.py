@@ -299,10 +299,11 @@ def test_summary_rejects_malformed_file_with_clear_error():
 
 
 def test_summary_rejects_unsupported_file_format_with_clear_error():
-    response = request_summary(client, b"PK\x03\x04not-a-csv", file_name="workbook.xlsx")
+    response = request_summary(client, b"not-a-workbook", file_name="workbook.xls")
 
     assert response.status_code == 415
     assert "csv" in response.json()["detail"].lower()
+    assert "xlsx" in response.json()["detail"].lower()
 
 
 def test_summary_rejects_invalid_missing_markers_with_clear_error():

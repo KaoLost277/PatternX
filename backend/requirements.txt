@@ -2,3 +2,4 @@ fastapi
 uvicorn
 duckdb
 python-multipart
+openpyxl

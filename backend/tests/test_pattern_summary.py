@@ -442,7 +442,7 @@ def test_summary_rejects_empty_header_only_malformed_and_unsupported_files():
         client, b"name,amount\nAda,1\nBob\n", ["name"], file_name="broken.csv"
     )
     unsupported_response = request_pattern_summary(
-        client, b"PK\x03\x04not-a-csv", ["name"], file_name="workbook.xlsx"
+        client, b"not-a-workbook", ["name"], file_name="workbook.xls"
     )
 
     assert empty_response.status_code == 400

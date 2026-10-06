@@ -23,14 +23,25 @@ def duckdb_working_directory(work_directory: Path) -> Path:
     return work_directory / DUCKDB_WORKING_DIRECTORY_NAME
 
 
-def new_raw_upload_path(work_directory: Path) -> Path:
+def new_request_directory(work_directory: Path) -> Path:
+    """Create a private directory for one request's raw upload and working copies."""
+    return Path(tempfile.mkdtemp(prefix="request-", dir=uploads_directory(work_directory)))
+
+
+def new_raw_upload_path(request_directory: Path, suffix: str) -> Path:
     raw_file = tempfile.NamedTemporaryFile(
-        suffix=".csv",
+        suffix=suffix,
         delete=False,
-        dir=uploads_directory(work_directory),
+        dir=request_directory,
     )
     raw_file.close()
     return Path(raw_file.name)
+
+
+def clean_up_request(work_directory: Path, request_directory: Path) -> None:
+    """Remove everything this request left behind, on success and on failure."""
+    shutil.rmtree(request_directory, ignore_errors=True)
+    clear_duckdb_working_directory(work_directory)
 
 
 def clear_duckdb_working_directory(work_directory: Path) -> None:

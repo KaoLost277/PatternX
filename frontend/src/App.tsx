@@ -29,7 +29,9 @@ interface PatternSummary {
 }
 
 interface ImportResponse {
-  columns: string[];
+  sheets: string[];
+  columns: string[] | null;
+  worksheet_row_limit: number | null;
 }
 
 interface ApiFailureResponse {
@@ -50,26 +52,28 @@ async function readResponseBody<T extends object>(response: Response, fallbackMe
   return responseBody as T;
 }
 
-async function importColumnNames(file: File): Promise<string[]> {
+async function importFile(file: File, worksheetName: string | null): Promise<ImportResponse> {
   const formData = new FormData();
   formData.append("file", file);
+  if (worksheetName !== null) {
+    formData.append("sheet", worksheetName);
+  }
 
   const response = await fetch("/api/imports", { method: "POST", body: formData });
-  const responseBody = await readResponseBody<ImportResponse>(
-    response,
-    "The file could not be imported.",
-  );
-
-  return responseBody.columns;
+  return await readResponseBody<ImportResponse>(response, "The file could not be imported.");
 }
 
 async function fetchColumnCompleteness(
   file: File,
   missingValueMarkers: Record<string, string[]>,
+  worksheetName: string,
 ): Promise<ColumnCompletenessSummary> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("missing_markers", JSON.stringify(missingValueMarkers));
+  if (worksheetName.length > 0) {
+    formData.append("sheet", worksheetName);
+  }
 
   const response = await fetch("/api/column-completeness", { method: "POST", body: formData });
   return await readResponseBody<ColumnCompletenessSummary>(
@@ -81,12 +85,16 @@ async function fetchColumnCompleteness(
 async function fetchPatternSummary(
   file: File,
   missingValueMarkers: Record<string, string[]>,
+  worksheetName: string,
   identifierColumn: string,
   analysisColumns: string[],
 ): Promise<PatternSummary> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("missing_markers", JSON.stringify(missingValueMarkers));
+  if (worksheetName.length > 0) {
+    formData.append("sheet", worksheetName);
+  }
   if (identifierColumn.length > 0) {
     formData.append("identifier_column", identifierColumn);
   }
@@ -193,6 +201,11 @@ function formatCountAndShare(count: number, share: number, inputRows: number): s
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  // A workbook lists its worksheets; exactly one of them can be chosen for the
+  // analysis. A CSV file has no worksheets and needs no choice.
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
+  const [worksheetRowLimit, setWorksheetRowLimit] = useState<number | null>(null);
   const [columnNames, setColumnNames] = useState<string[]>([]);
   const [summary, setSummary] = useState<ColumnCompletenessSummary | null>(null);
   // Marker text is keyed by the column name the API reported; the API reports
@@ -232,12 +245,20 @@ function App() {
     setStatusMessage(null);
   }
 
-  async function loadColumnCompleteness(file: File, missingValueMarkers: Record<string, string[]>) {
+  async function loadColumnCompleteness(
+    file: File,
+    missingValueMarkers: Record<string, string[]>,
+    worksheetName: string,
+  ) {
     setStatusMessage("Computing the column completeness summary...");
 
     const startedRequest = beginRequest();
     try {
-      const completenessSummary = await fetchColumnCompleteness(file, missingValueMarkers);
+      const completenessSummary = await fetchColumnCompleteness(
+        file,
+        missingValueMarkers,
+        worksheetName,
+      );
       if (!isCurrentRequest(startedRequest)) {
         return;
       }
@@ -254,6 +275,7 @@ function App() {
   async function loadPatternSummary(
     file: File,
     missingValueMarkers: Record<string, string[]>,
+    worksheetName: string,
     identifierColumnToUse: string,
     analysisColumnsToUse: string[],
   ) {
@@ -264,6 +286,7 @@ function App() {
       const computedPatternSummary = await fetchPatternSummary(
         file,
         missingValueMarkers,
+        worksheetName,
         identifierColumnToUse,
         analysisColumnsToUse,
       );
@@ -281,18 +304,9 @@ function App() {
     }
   }
 
-  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    // Allow choosing the same file again after a failed or repeated import.
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-
-    // A new import starts from a clean state: no selection, marker setting, or
-    // result of a previous file may survive into this one.
-    setSelectedFile(file);
-    setSelectedFileName(file.name);
+  function resetImportedFileState() {
+    // A new import or worksheet starts from a clean state: no selection,
+    // marker setting, or result of a previous dataset may survive into it.
     setColumnNames([]);
     setSummary(null);
     setMissingMarkersText({});
@@ -303,23 +317,72 @@ function App() {
     setPatternStatusFilters({});
     setShowAllPatterns(false);
     setErrorMessage(null);
+  }
 
-    setStatusMessage("Reading the file...");
+  async function loadImportedColumns(file: File, worksheetName: string | null): Promise<boolean> {
+    setStatusMessage(worksheetName === null ? "Reading the file..." : "Reading the worksheet...");
+
     const startedRequest = beginRequest();
     try {
-      const columns = await importColumnNames(file);
+      const importResponse = await importFile(file, worksheetName);
       if (!isCurrentRequest(startedRequest)) {
-        return;
+        return false;
       }
-      setColumnNames(columns);
+      setSheetNames(importResponse.sheets);
+      setWorksheetRowLimit(importResponse.worksheet_row_limit);
+      if (importResponse.columns === null) {
+        // A workbook is analyzed through exactly one worksheet, chosen next.
+        setStatusMessage("Choose one worksheet of this workbook to analyze.");
+        return false;
+      }
+      setColumnNames(importResponse.columns);
+      return true;
     } catch (error) {
       if (isCurrentRequest(startedRequest)) {
         handleRequestFailure(error);
       }
+      return false;
+    }
+  }
+
+  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Allow choosing the same file again after a failed or repeated import.
+    event.target.value = "";
+    if (!file) {
       return;
     }
 
-    await loadColumnCompleteness(file, {});
+    setSelectedFile(file);
+    setSelectedFileName(file.name);
+    setSheetNames([]);
+    setSelectedSheet("");
+    setWorksheetRowLimit(null);
+    resetImportedFileState();
+
+    const columnsReady = await loadImportedColumns(file, null);
+    if (!columnsReady) {
+      return;
+    }
+
+    await loadColumnCompleteness(file, {}, "");
+  }
+
+  async function handleWorksheetSelected(event: ChangeEvent<HTMLSelectElement>) {
+    const worksheetName = event.target.value;
+    setSelectedSheet(worksheetName);
+    if (!selectedFile || worksheetName.length === 0) {
+      return;
+    }
+
+    resetImportedFileState();
+
+    const columnsReady = await loadImportedColumns(selectedFile, worksheetName);
+    if (!columnsReady) {
+      return;
+    }
+
+    await loadColumnCompleteness(selectedFile, {}, worksheetName);
   }
 
   function handleMissingMarkersChanged(columnName: string, markersText: string) {
@@ -338,7 +401,11 @@ function App() {
     // The Missing Value rules changed, so any earlier pattern summary no
     // longer describes the current rules.
     setPatternSummary(null);
-    await loadColumnCompleteness(selectedFile, parseMissingValueMarkers(missingMarkersText));
+    await loadColumnCompleteness(
+      selectedFile,
+      parseMissingValueMarkers(missingMarkersText),
+      selectedSheet,
+    );
   }
 
   function handleIdentifierColumnChanged(event: ChangeEvent<HTMLSelectElement>) {
@@ -370,6 +437,7 @@ function App() {
     await loadPatternSummary(
       selectedFile,
       appliedMissingValueMarkers,
+      selectedSheet,
       identifierColumn,
       columnsToAnalyze,
     );
@@ -411,14 +479,35 @@ function App() {
       <section className="card">
         <h1>Data Completeness Profiler</h1>
         <p className="lead">
-          Import a CSV file to see how many of its rows hold a value in each column. Your file stays
-          on this machine and is deleted after it has been read.
+          Import a CSV file or an XLSX workbook to see how many of its rows hold a value in each
+          column. Your file stays on this machine and is deleted after it has been read.
         </p>
 
         <label className="file-picker">
-          <span>CSV file</span>
-          <input type="file" accept=".csv" onChange={handleFileSelected} />
+          <span>CSV or XLSX file</span>
+          <input type="file" accept=".csv,.xlsx" onChange={handleFileSelected} />
         </label>
+
+        {sheetNames.length > 0 && (
+          <label className="file-picker">
+            <span>Worksheet</span>
+            <select value={selectedSheet} onChange={handleWorksheetSelected}>
+              <option value="">Choose one worksheet</option>
+              {sheetNames.map((sheetName, sheetIndex) => (
+                <option key={sheetIndex} value={sheetName}>
+                  {sheetName}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {worksheetRowLimit !== null && (
+          <p className="hint-text">
+            Excel&apos;s file format allows at most {worksheetRowLimit.toLocaleString()} worksheet
+            rows, header row included. Every row of the chosen worksheet is read and counted; nothing
+            is truncated.
+          </p>
+        )}
 
         {selectedFileName && <p className="status-line">Selected file: {selectedFileName}</p>}
         {statusMessage && <p className="status-line">{statusMessage}</p>}
