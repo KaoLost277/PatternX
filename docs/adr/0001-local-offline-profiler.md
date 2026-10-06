@@ -1,0 +1,3 @@
+# Run the profiler as a local offline application
+
+The profiler will use a React/Vite UI and a FastAPI service backed by DuckDB, with the service bound to the user's machine and no external runtime calls. Raw input files are transient and deleted after analysis; only summary CSVs are offered for download. This keeps potentially sensitive data on the single user's Windows or macOS machine while moving large-file analysis out of the browser. We prefer this over browser-only analysis for its memory and processing limits, and over a cloud backend to avoid remote upload, retention, and multi-user access requirements.
