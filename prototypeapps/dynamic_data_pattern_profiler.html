@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Data Pattern Profiler</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel (.xlsx) support -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- PapaParse for high-speed CSV parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <!-- Google Font Inter & Prompt for clean Thai typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Prompt', 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .code-font {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        /* Custom scrollbar for data tables */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 flex flex-col">
+
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-slate-900 leading-tight">Data Pattern Profiler</h1>
+                    <p class="text-xs text-slate-500">วิเคราะห์แพทเทิร์นความครบถ้วนของข้อมูลแบบไดนามิก</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <span id="dataStatusBadge" class="hidden inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+                    <span id="statusRowInfo">พร้อมประมวลผล</span>
+                </span>
+                <button onclick="resetApp()" class="text-sm px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition text-slate-600 font-medium">
+                    เริ่มใหม่
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+        <!-- Toast Notification Area -->
+        <div id="toast" class="fixed bottom-5 right-5 z-50 transform transition-all duration-300 translate-y-24 opacity-0 pointer-events-none bg-slate-900 text-white text-sm px-4 py-3 rounded-xl shadow-xl flex items-center space-x-3">
+            <span id="toastIcon">ℹ️</span>
+            <span id="toastMsg">แจ้งเตือน</span>
+        </div>
+
+        <!-- Section 1: File Ingestion / Mock Generation -->
+        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 flex items-center">
+                        <span class="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2">1</span>
+                        นำเข้าชุดข้อมูล (Input Dataset)
+                    </h2>
+                    <p class="text-sm text-slate-500 mt-0.5">รองรับไฟล์ CSV, Excel (.xlsx) หรือกดทดสอบด้วยข้อมูลจำลองขนาด 50,000 แถวได้ทันที</p>
+                </div>
+                <!-- Sample Data Buttons -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="generateMockData('supervisor', 20000)" class="px-3 py-2 text-xs font-medium rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center">
+                        ⚡ โหลดตัวอย่าง: สายอนุมัติ L1-L3 (20,000 แถว)
+                    </button>
+                    <button onclick="generateMockData('kyc', 50000)" class="px-3 py-2 text-xs font-medium rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center">
+                        ⚡ ตัวอย่าง: เอกสารเปิดบัญชี (50,000 แถว)
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-5">
+                <div id="dropzone" class="border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-2xl p-6 text-center cursor-pointer transition bg-slate-50/50 hover:bg-indigo-50/20 group">
+                    <input type="file" id="fileInput" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleFileSelect(event)">
+                    <div class="flex flex-col items-center justify-center space-y-2">
+                        <div class="w-12 h-12 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center text-indigo-600 group-hover:scale-110 transition">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                        </div>
+                        <p class="text-sm font-semibold text-slate-700">คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวางที่นี่</p>
+                        <p class="text-xs text-slate-400">รองรับไฟล์ CSV และ Excel (.xlsx) ทุกโครงสร้างคอลัมน์</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Dynamic Column Selection -->
+        <section id="columnSelectionSection" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 flex items-center">
+                        <span class="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2">2</span>
+                        เลือกคอลัมน์ที่ต้องการหา Pattern
+                    </h2>
+                    <p class="text-sm text-slate-500 mt-0.5">ระบบตรวจพบคอลัมน์ทั้งหมดแบบไดนามิก เลือกคอลัมน์เพื่อจัดกลุ่มความสมบูรณ์</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="selectAllColumns(true)" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600">เลือกทั้งหมด</button>
+                    <button onclick="selectAllColumns(false)" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600">ล้างที่เลือก</button>
+                    <button onclick="runPatternAnalysis()" class="text-xs font-semibold px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-200 transition flex items-center space-x-1.5">
+                        <span>ประมวลผล Pattern</span>
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dynamic Pill Checkboxes -->
+            <div id="columnPillContainer" class="mt-4 flex flex-wrap gap-2.5">
+                <!-- Checkboxes will be populated here -->
+            </div>
+        </section>
+
+        <!-- Section 3: Pattern Analysis Results -->
+        <section id="resultsSection" class="hidden space-y-6">
+            
+            <!-- Metrics Summary Bar -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                    <span class="text-xs font-medium text-slate-400">แถวข้อมูลทั้งหมด</span>
+                    <p id="metricTotalRows" class="text-2xl font-bold text-slate-900 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                    <span class="text-xs font-medium text-slate-400">คอลัมน์ที่วิเคราะห์</span>
+                    <p id="metricSelectedCols" class="text-2xl font-bold text-indigo-600 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                    <span class="text-xs font-medium text-slate-400">รูปแบบ Pattern ที่พบ</span>
+                    <p id="metricPatternsCount" class="text-2xl font-bold text-slate-900 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                    <span class="text-xs font-medium text-slate-400">เวลาที่ใช้คำนวณ</span>
+                    <p id="metricExecTime" class="text-2xl font-bold text-emerald-600 mt-1">0 ms</p>
+                </div>
+            </div>
+
+            <!-- Pattern List / Matrix -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900 flex items-center">
+                            <span class="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2">3</span>
+                            สรุปรูปแบบความครบถ้วน (Pattern Distribution)
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1 align-middle"></span> เขียว = มีข้อมูล
+                            <span class="inline-block w-2.5 h-2.5 rounded-full bg-slate-300 ml-3 mr-1 align-middle"></span> เทา = ช่องว่าง/ไม่ได้กรอก
+                            (คลิกที่การ์ดเพื่อกรองดูแถวข้อมูลเฉพาะกลุ่มนั้น)
+                        </p>
+                    </div>
+                    <div id="filterIndicator" class="hidden">
+                        <button onclick="clearPatternFilter()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg flex items-center space-x-1">
+                            <span>กำลังกรอง Pattern</span>
+                            <span class="font-bold">✕ ล้างตัวกรอง</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Patterns Cards Grid -->
+                <div id="patternCardsContainer" class="mt-4 space-y-3">
+                    <!-- Cards will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Section 4: Data Preview Table with Color Coding -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900 flex items-center">
+                            <span class="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2">4</span>
+                            ตารางพรีวิวและไฮไลต์สี (Data Grid Preview)
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5" id="previewTableSubtitle">แสดงตัวอย่างแถวข้อมูลจริง พร้อมไฮไลต์สีตามสถานะ</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-400" id="previewRowCount">แสดง 50 แถวแรก</span>
+                    </div>
+                </div>
+
+                <!-- Scrollable Table -->
+                <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead id="tableHeader" class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                            <!-- Headers generated here -->
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-slate-100">
+                            <!-- Rows generated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <script>
+        // Global Application State
+        let rawData = [];
+        let detectedColumns = [];
+        let selectedColumns = [];
+        let patternResults = [];
+        let activePatternFilter = null;
+
+        // Utility: Show Toast Notification
+        function showToast(msg, icon = 'ℹ️') {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            document.getElementById('toastIcon').innerText = icon;
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3000);
+        }
+
+        // Setup Drag & Drop Handlers
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-indigo-500', 'bg-indigo-50/30');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-indigo-500', 'bg-indigo-50/30');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-indigo-500', 'bg-indigo-50/30');
+            if (e.dataTransfer.files.length) {
+                processUploadedFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        function handleFileSelect(e) {
+            if (e.target.files.length) {
+                processUploadedFile(e.target.files[0]);
+            }
+        }
+
+        function processUploadedFile(file) {
+            showToast(`กำลังอ่านไฟล์: ${file.name}...`, '⏳');
+            const fileExt = file.name.split('.').pop().toLowerCase();
+
+            if (fileExt === 'csv') {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: 'greedy',
+                    complete: function(results) {
+                        if (results.data && results.data.length > 0) {
+                            rawData = results.data;
+                            initColumns(Object.keys(results.data[0]));
+                        } else {
+                            showToast('ไฟล์ไม่มีข้อมูลหรือรูปแบบไม่ถูกต้อง', '⚠️');
+                        }
+                    },
+                    error: function(err) {
+                        showToast(`เกิดข้อผิดพลาด: ${err.message}`, '❌');
+                    }
+                });
+            } else if (fileExt === 'xlsx' || fileExt === 'xls') {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+                        if (jsonData.length > 0) {
+                            rawData = jsonData;
+                            initColumns(Object.keys(jsonData[0]));
+                        } else {
+                            showToast('แผ่นงาน Excel ว่างเปล่า', '⚠️');
+                        }
+                    } catch (err) {
+                        showToast('ไม่สามารถอ่านไฟล์ Excel ได้', '❌');
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                showToast('รองรับเฉพาะไฟล์ .csv หรือ .xlsx', '❌');
+            }
+        }
+
+        function generateMockData(type, count) {
+            showToast(`กำลังสร้างข้อมูลจำลอง ${count.toLocaleString()} แถว...`, '⚡');
+            rawData = [];
+
+            if (type === 'supervisor') {
+                // Simulating HR approval chains (User, Dept, L1, L2, L3)
+                const departments = ['IT Solutions', 'Digital Marketing', 'Finance & Acc', 'Operations', 'Human Resources'];
+                for (let i = 1; i <= count; i++) {
+                    const rnd = Math.random();
+                    let l1 = "", l2 = "", l3 = "";
+
+                    // Create realistic patterns:
+                    // 55% have L1, L2, L3
+                    // 25% have L1, L2 (L3 empty)
+                    // 12% have L1 only
+                    // 5% abnormal: L1 & L3 filled, L2 skipped
+                    // 3% completely empty
+                    if (rnd < 0.55) {
+                        l1 = `SUP_L1_${Math.floor(i % 50)}`;
+                        l2 = `SUP_L2_${Math.floor(i % 20)}`;
+                        l3 = `SUP_L3_${Math.floor(i % 5)}`;
+                    } else if (rnd < 0.80) {
+                        l1 = `SUP_L1_${Math.floor(i % 50)}`;
+                        l2 = `SUP_L2_${Math.floor(i % 20)}`;
+                    } else if (rnd < 0.92) {
+                        l1 = `SUP_L1_${Math.floor(i % 50)}`;
+                    } else if (rnd < 0.97) {
+                        l1 = `SUP_L1_${Math.floor(i % 50)}`;
+                        l3 = `SUP_L3_${Math.floor(i % 5)}`; // skipped L2
+                    }
+
+                    rawData.push({
+                        "Employee_ID": `EMP-${String(i).padStart(6, '0')}`,
+                        "Employee_Name": `Staff User ${i}`,
+                        "Department": departments[i % departments.length],
+                        "Supervisor_L1": l1,
+                        "Supervisor_L2": l2,
+                        "Supervisor_L3": l3
+                    });
+                }
+            } else if (type === 'kyc') {
+                // Simulating KYC account opening documents
+                for (let i = 1; i <= count; i++) {
+                    const rnd = Math.random();
+                    let nationalId = "TH-" + Math.floor(1000000000000 + Math.random() * 9000000000000);
+                    let bookBank = "";
+                    let salarySlip = "";
+                    let consentPDPA = "";
+
+                    if (rnd < 0.65) {
+                        bookBank = "KBANK-123456";
+                        salarySlip = "SLIP_2026.pdf";
+                        consentPDPA = "YES";
+                    } else if (rnd < 0.85) {
+                        bookBank = "SCB-987654";
+                        consentPDPA = "YES";
+                    } else {
+                        consentPDPA = (Math.random() > 0.5) ? "YES" : "";
+                    }
+
+                    rawData.push({
+                        "Application_No": `APP-${String(i).padStart(7, '0')}`,
+                        "ID_Card_Number": nationalId,
+                        "Bank_Statement": bookBank,
+                        "Salary_Slip": salarySlip,
+                        "PDPA_Consent": consentPDPA
+                    });
+                }
+            }
+
+            initColumns(Object.keys(rawData[0]));
+            // Preselect supervisor or relevant columns automatically
+            if (type === 'supervisor') {
+                selectedColumns = ['Supervisor_L1', 'Supervisor_L2', 'Supervisor_L3'];
+            } else {
+                selectedColumns = ['Bank_Statement', 'Salary_Slip', 'PDPA_Consent'];
+            }
+            refreshColumnCheckboxes();
+            runPatternAnalysis();
+        }
+
+        function initColumns(columns) {
+            detectedColumns = columns;
+            // Default: pick columns that sound like attributes, or first 3-4 columns
+            if (selectedColumns.length === 0) {
+                selectedColumns = columns.filter(c => !c.toLowerCase().includes('id') && !c.toLowerCase().includes('name')).slice(0, 4);
+                if (selectedColumns.length === 0) selectedColumns = columns.slice(0, 3);
+            }
+
+            // Update UI Badges
+            document.getElementById('dataStatusBadge').classList.remove('hidden');
+            document.getElementById('statusRowInfo').innerText = `${rawData.length.toLocaleString()} แถว พร้อมใช้งาน`;
+            document.getElementById('columnSelectionSection').classList.remove('hidden');
+
+            refreshColumnCheckboxes();
+            showToast(`โหลดข้อมูลสำเร็จ ${rawData.length.toLocaleString()} แถว พบ ${columns.length} คอลัมน์`, '✅');
+        }
+
+        function refreshColumnCheckboxes() {
+            const container = document.getElementById('columnPillContainer');
+            container.innerHTML = '';
+
+            detectedColumns.forEach(col => {
+                const isChecked = selectedColumns.includes(col);
+                const label = document.createElement('label');
+                label.className = `cursor-pointer select-none inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-medium border transition-all ${
+                    isChecked 
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-sm' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`;
+
+                label.innerHTML = `
+                    <input type="checkbox" value="${col}" ${isChecked ? 'checked' : ''} class="mr-2 rounded text-indigo-600 focus:ring-0">
+                    <span>${col}</span>
+                `;
+
+                label.querySelector('input').addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        if (!selectedColumns.includes(col)) selectedColumns.push(col);
+                    } else {
+                        selectedColumns = selectedColumns.filter(c => c !== col);
+                    }
+                    refreshColumnCheckboxes();
+                });
+
+                container.appendChild(label);
+            });
+        }
+
+        function selectAllColumns(select) {
+            selectedColumns = select ? [...detectedColumns] : [];
+            refreshColumnCheckboxes();
+        }
+
+        function isValuePresent(val) {
+            if (val === null || val === undefined) return false;
+            const str = String(val).trim().toLowerCase();
+            return !(str === '' || str === 'n/a' || str === 'null' || str === 'none' || str === '-' || str === 'nan');
+        }
+
+        function runPatternAnalysis() {
+            if (selectedColumns.length === 0) {
+                showToast('กรุณาเลือกคอลัมน์อย่างน้อย 1 คอลัมน์', '⚠️');
+                return;
+            }
+
+            const startTime = performance.now();
+            const totalRows = rawData.length;
+            const patternMap = new Map();
+
+            // High performance single-pass scan through all rows
+            for (let i = 0; i < totalRows; i++) {
+                const row = rawData[i];
+                let patternKey = '';
+
+                // Build bitmask/key e.g., '1-0-1'
+                for (let c = 0; c < selectedColumns.length; c++) {
+                    const col = selectedColumns[c];
+                    const hasVal = isValuePresent(row[col]);
+                    patternKey += (hasVal ? '1' : '0');
+                }
+
+                const currentCount = patternMap.get(patternKey) || 0;
+                patternMap.set(patternKey, currentCount + 1);
+            }
+
+            // Convert to sorted array
+            patternResults = [];
+            for (let [patternKey, count] of patternMap.entries()) {
+                const percentage = ((count / totalRows) * 100);
+                
+                // Build Column Status Object
+                const colStatus = {};
+                for (let c = 0; c < selectedColumns.length; c++) {
+                    colStatus[selectedColumns[c]] = patternKey[c] === '1';
+                }
+
+                patternResults.push({
+                    key: patternKey,
+                    count: count,
+                    percentage: percentage,
+                    colStatus: colStatus
+                });
+            }
+
+            // Sort by frequency descending
+            patternResults.sort((a, b) => b.count - a.count);
+
+            const endTime = performance.now();
+            const elapsed = Math.round(endTime - startTime);
+
+            // Update Metrics Display
+            document.getElementById('metricTotalRows').innerText = totalRows.toLocaleString();
+            document.getElementById('metricSelectedCols').innerText = selectedColumns.length;
+            document.getElementById('metricPatternsCount').innerText = patternResults.length;
+            document.getElementById('metricExecTime').innerText = `${elapsed} ms`;
+
+            // Render Results
+            document.getElementById('resultsSection').classList.remove('hidden');
+            activePatternFilter = null;
+            renderPatternCards();
+            renderPreviewTable();
+            showToast(`ประมวลผล ${totalRows.toLocaleString()} แถว สำเร็จในเวลา ${elapsed} ms`, '⚡');
+        }
+
+        function renderPatternCards() {
+            const container = document.getElementById('patternCardsContainer');
+            container.innerHTML = '';
+
+            const filterIndicator = document.getElementById('filterIndicator');
+            if (activePatternFilter) {
+                filterIndicator.classList.remove('hidden');
+            } else {
+                filterIndicator.classList.add('hidden');
+            }
+
+            patternResults.forEach((pattern, index) => {
+                const isSelected = activePatternFilter === pattern.key;
+                const card = document.createElement('div');
+                card.className = `p-4 rounded-xl border transition-all cursor-pointer ${
+                    isSelected 
+                    ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-200' 
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50 bg-white'
+                }`;
+
+                // Status Pills
+                let badgesHtml = '';
+                selectedColumns.forEach(col => {
+                    const hasVal = pattern.colStatus[col];
+                    badgesHtml += `
+                        <div class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                            hasVal 
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                            : 'bg-slate-100 text-slate-400 border border-slate-200 line-through'
+                        }">
+                            <span>${hasVal ? '✓' : '✗'}</span>
+                            <span>${col}</span>
+                        </div>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs font-bold text-slate-400 w-6">#${index + 1}</span>
+                            <div class="flex flex-wrap gap-1.5">
+                                ${badgesHtml}
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-4 self-end sm:self-center">
+                            <div class="text-right">
+                                <div class="text-base font-bold text-slate-900">${pattern.percentage.toFixed(1)}%</div>
+                                <div class="text-xs text-slate-400">${pattern.count.toLocaleString()} แถว</div>
+                            </div>
+                            <div class="w-20 bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                                <div class="bg-indigo-600 h-2.5 rounded-full" style="width: ${pattern.percentage}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                card.addEventListener('click', () => {
+                    if (activePatternFilter === pattern.key) {
+                        activePatternFilter = null;
+                    } else {
+                        activePatternFilter = pattern.key;
+                    }
+                    renderPatternCards();
+                    renderPreviewTable();
+                });
+
+                container.appendChild(card);
+            });
+        }
+
+        function clearPatternFilter() {
+            activePatternFilter = null;
+            renderPatternCards();
+            renderPreviewTable();
+        }
+
+        function renderPreviewTable() {
+            const tableHeader = document.getElementById('tableHeader');
+            const tableBody = document.getElementById('tableBody');
+            const subtitle = document.getElementById('previewTableSubtitle');
+
+            // Filter data if user selected a pattern card
+            let displayRows = rawData;
+            if (activePatternFilter) {
+                displayRows = rawData.filter(row => {
+                    let key = '';
+                    for (let c = 0; c < selectedColumns.length; c++) {
+                        key += isValuePresent(row[selectedColumns[c]]) ? '1' : '0';
+                    }
+                    return key === activePatternFilter;
+                });
+                subtitle.innerText = `กำลังกรองเฉพาะ Pattern [${activePatternFilter}] พบ ${displayRows.length.toLocaleString()} แถว`;
+            } else {
+                subtitle.innerText = `แสดงแถวข้อมูลทั้งหมด (พรีวิว 50 รายการแรก)`;
+            }
+
+            document.getElementById('previewRowCount').innerText = `แสดง ${Math.min(displayRows.length, 50)} จาก ${displayRows.length.toLocaleString()} แถว`;
+
+            // Build Header
+            tableHeader.innerHTML = '';
+            const trHead = document.createElement('tr');
+            
+            const thNo = document.createElement('th');
+            thNo.className = 'py-3 px-3 text-slate-400 font-semibold w-12';
+            thNo.innerText = '#';
+            trHead.appendChild(thNo);
+
+            detectedColumns.forEach(col => {
+                const th = document.createElement('th');
+                const isSelected = selectedColumns.includes(col);
+                th.className = `py-3 px-4 font-semibold ${isSelected ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-600'}`;
+                th.innerHTML = `
+                    <span>${col}</span>
+                    ${isSelected ? '<span class="ml-1 text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">Checked</span>' : ''}
+                `;
+                trHead.appendChild(th);
+            });
+            tableHeader.appendChild(trHead);
+
+            // Build Body (First 50 rows)
+            tableBody.innerHTML = '';
+            const previewLimit = Math.min(displayRows.length, 50);
+
+            for (let i = 0; i < previewLimit; i++) {
+                const row = displayRows[i];
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50/80 transition-colors';
+
+                const tdNo = document.createElement('td');
+                tdNo.className = 'py-2.5 px-3 text-slate-400 code-font';
+                tdNo.innerText = i + 1;
+                tr.appendChild(tdNo);
+
+                detectedColumns.forEach(col => {
+                    const td = document.createElement('td');
+                    const val = row[col];
+                    const isSelected = selectedColumns.includes(col);
+                    const filled = isValuePresent(val);
+
+                    if (isSelected) {
+                        if (filled) {
+                            td.className = 'py-2.5 px-4 bg-emerald-50/50 text-emerald-900 font-medium border-x border-emerald-100/50';
+                            td.innerHTML = `<span class="inline-flex items-center"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></span>${val}</span>`;
+                        } else {
+                            td.className = 'py-2.5 px-4 bg-rose-50/40 text-slate-400 italic border-x border-rose-100/50';
+                            td.innerHTML = `<span class="text-rose-400 font-normal">✗ (ไม่มีข้อมูล)</span>`;
+                        }
+                    } else {
+                        td.className = 'py-2.5 px-4 text-slate-600';
+                        td.innerText = (val !== undefined && val !== null && val !== '') ? val : '-';
+                    }
+                    tr.appendChild(td);
+                });
+
+                tableBody.appendChild(tr);
+            }
+        }
+
+        function resetApp() {
+            rawData = [];
+            detectedColumns = [];
+            selectedColumns = [];
+            patternResults = [];
+            activePatternFilter = null;
+
+            document.getElementById('fileInput').value = '';
+            document.getElementById('dataStatusBadge').classList.add('hidden');
+            document.getElementById('columnSelectionSection').classList.add('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+            showToast('รีเซ็ตระบบเรียบร้อย สามารถนำเข้าไฟล์ใหม่ได้ทันที', '🔄');
+        }
+    </script>
+</body>
+</html>
