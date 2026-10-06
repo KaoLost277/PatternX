@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import "./App.css";
 
@@ -15,10 +15,16 @@ interface ColumnCompletenessSummary {
   columns: ColumnCompleteness[];
 }
 
+interface PreviewRow {
+  identifier_value: string | null;
+  values: (string | null)[];
+}
+
 interface CompletenessPattern {
   statuses: string[];
   count: number;
   share: number;
+  preview_rows: PreviewRow[];
 }
 
 interface PatternSummary {
@@ -180,6 +186,10 @@ const HIGH_CARDINALITY_COLUMN_THRESHOLD = 20;
 
 const JOB_POLL_INTERVAL_MILLISECONDS = 500;
 
+// The pattern table shows one column per analyzed column plus Input Rows,
+// Share of Input Rows, and Sample rows.
+const PATTERN_SUMMARY_EXTRA_COLUMNS = 3;
+
 function withoutIdentifierColumn(
   analysisColumns: string[],
   identifierColumn: string,
@@ -245,6 +255,65 @@ function formatElapsedSeconds(elapsedSeconds: number): string {
   return `${elapsedSeconds.toFixed(1)} seconds`;
 }
 
+interface PatternPreviewProps {
+  patternSummary: PatternSummary;
+  pattern: CompletenessPattern;
+}
+
+function PatternPreview({ patternSummary, pattern }: PatternPreviewProps) {
+  if (pattern.preview_rows.length === 0) {
+    return (
+      <p className="hint-text">
+        No sample rows were kept for this pattern. Its exact count above is unaffected.
+      </p>
+    );
+  }
+
+  const identifierColumnLabel =
+    patternSummary.identifier_column !== null ? patternSummary.identifier_column : "Input Row";
+
+  return (
+    <div className="preview-panel">
+      <p className="filter-heading">
+        {pattern.preview_rows.length} sample Input Rows of this pattern, out of its{" "}
+        {pattern.count.toLocaleString()}. Long values are shortened. Every value is shown as plain
+        text.
+      </p>
+      <div className="summary-table-frame">
+        <table className="summary-table">
+          <thead>
+            <tr>
+              <th scope="col">{identifierColumnLabel}</th>
+              {patternSummary.analysis_columns.map((columnName, columnIndex) => (
+                <th key={columnIndex} scope="col">
+                  {columnName}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pattern.preview_rows.map((previewRow, previewRowIndex) => (
+              <tr key={previewRowIndex}>
+                <th scope="row">{previewRow.identifier_value ?? "Not set"}</th>
+                {previewRow.values.map((cellValue, valueIndex) => (
+                  <td key={valueIndex}>
+                    <div className="preview-cell">
+                      <span className={patternStatusClass(pattern.statuses[valueIndex])}>
+                        {patternStatusLabel(pattern.statuses[valueIndex])}
+                      </span>
+                      {cellValue !== null && <span className="preview-value">{cellValue}</span>}
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
@@ -271,6 +340,7 @@ function App() {
   const [analysisJob, setAnalysisJob] = useState<AnalysisJobStatus | null>(null);
   const [highCardinalityAcknowledged, setHighCardinalityAcknowledged] = useState<boolean>(false);
   const [patternStatusFilters, setPatternStatusFilters] = useState<Record<string, string>>({});
+  const [selectedPatternIndex, setSelectedPatternIndex] = useState<number | null>(null);
   const [showAllPatterns, setShowAllPatterns] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -321,11 +391,19 @@ function App() {
     }
   }
 
+  function resetPatternViewState() {
+    // What patterns are displayed decides which rows exist to click, so a
+    // changed view closes any open preview and starts from the most common
+    // patterns again.
+    setSelectedPatternIndex(null);
+    setShowAllPatterns(false);
+  }
+
   function applyFinishedAnalysis(jobStatus: AnalysisJobStatus) {
     if (jobStatus.state === JOB_STATE_SUCCEEDED && jobStatus.result !== null) {
       setPatternSummary(jobStatus.result);
       setPatternStatusFilters({});
-      setShowAllPatterns(false);
+      resetPatternViewState();
       setStatusMessage(null);
       return;
     }
@@ -387,7 +465,7 @@ function App() {
     setAnalysisJob(null);
     setHighCardinalityAcknowledged(false);
     setPatternStatusFilters({});
-    setShowAllPatterns(false);
+    resetPatternViewState();
     setErrorMessage(null);
   }
 
@@ -537,16 +615,26 @@ function App() {
     setPatternStatusFilters((previousFilters) => {
       return { ...previousFilters, [columnName]: status };
     });
-    setShowAllPatterns(false);
+    resetPatternViewState();
   }
 
   function handleClearPatternFilters() {
     setPatternStatusFilters({});
-    setShowAllPatterns(false);
+    resetPatternViewState();
   }
 
   function handleShowAllPatternsToggled() {
+    setSelectedPatternIndex(null);
     setShowAllPatterns((previousShowAll) => !previousShowAll);
+  }
+
+  function handlePatternPreviewToggled(patternIndex: number) {
+    // Clicking the open pattern again closes its preview.
+    if (selectedPatternIndex === patternIndex) {
+      setSelectedPatternIndex(null);
+      return;
+    }
+    setSelectedPatternIndex(patternIndex);
   }
 
   // While an analysis runs, keep reading its status so the user sees progress
@@ -892,21 +980,40 @@ function App() {
                         ))}
                         <th scope="col">Input Rows</th>
                         <th scope="col">Share of Input Rows</th>
+                        <th scope="col">Sample rows</th>
                       </tr>
                     </thead>
                     <tbody>
                       {displayedPatterns.map((pattern, patternIndex) => (
-                        <tr key={patternIndex}>
-                          {pattern.statuses.map((status, statusIndex) => (
-                            <td key={statusIndex}>
-                              <span className={patternStatusClass(status)}>
-                                {patternStatusLabel(status)}
-                              </span>
+                        <Fragment key={patternIndex}>
+                          <tr>
+                            {pattern.statuses.map((status, statusIndex) => (
+                              <td key={statusIndex}>
+                                <span className={patternStatusClass(status)}>
+                                  {patternStatusLabel(status)}
+                                </span>
+                              </td>
+                            ))}
+                            <td>{pattern.count}</td>
+                            <td>{formatShare(pattern.share)}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handlePatternPreviewToggled(patternIndex)}
+                              >
+                                {selectedPatternIndex === patternIndex ? "Hide rows" : "Show rows"}
+                              </button>
                             </td>
-                          ))}
-                          <td>{pattern.count}</td>
-                          <td>{formatShare(pattern.share)}</td>
-                        </tr>
+                          </tr>
+                          {selectedPatternIndex === patternIndex && (
+                            <tr>
+                              <td colSpan={patternSummary.analysis_columns.length + PATTERN_SUMMARY_EXTRA_COLUMNS}>
+                                <PatternPreview patternSummary={patternSummary} pattern={pattern} />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>

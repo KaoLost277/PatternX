@@ -12,9 +12,9 @@ Summary: for every column, the exact count and share of Input Rows with a presen
 and whitespace-only values are missing by default, additional missing value markers can be configured
 per column, and zero counts as present. The Completeness Summary — every observed Completeness Pattern
 with its exact count and share of Input Rows — runs as a background analysis job with progress,
-elapsed-time reporting, and cancellation, and every finished analysis offers the two summary
-downloads `column_completeness.csv` and `pattern_summary.csv`. Pattern row previews follow in a later
-ticket.
+elapsed-time reporting, and cancellation. Every finished analysis offers the two summary downloads
+`column_completeness.csv` and `pattern_summary.csv`, and clicking a pattern previews a small sample
+of its Input Rows.
 
 ## Prerequisites
 
@@ -90,6 +90,18 @@ Both files hold summary counts and shares only: never raw Input Rows, never row-
 are UTF-8 CSV with a byte order mark so spreadsheet apps read them as text, shares are written at
 full precision, and a column name a spreadsheet could read as a formula — with or without leading
 whitespace — is prefixed with an apostrophe so it stays inert text.
+
+## Pattern previews
+
+Clicking a pattern shows a small sample of the Input Rows behind it, with present and missing cells
+distinguished and Identifier Column values for recognition. Every value is shown as plain text, so
+hostile cell content cannot run as markup or script.
+
+The samples are kept while the analysis runs: up to five rows per pattern, with values longer than
+256 characters shortened. Memory stays bounded — every pattern keeps its first sample row before any
+pattern keeps a second one, up to 20,000 first rows and 20,000 further rows in total. A pattern
+whose samples were not kept says so in the UI; the exact counts beside the samples are never capped.
+Preview rows exist only in the app — the downloads never contain them.
 
 ## Tests
 

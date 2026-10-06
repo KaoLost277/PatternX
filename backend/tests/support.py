@@ -1,4 +1,5 @@
 import io
+import json
 import time
 from pathlib import Path
 
@@ -75,6 +76,47 @@ def run_analysis_job(
     creation_response = start_analysis_job(test_client, file_name, file_bytes, form_fields)
     assert creation_response.status_code == 201
     return await_analysis_job(test_client, creation_response.json()["job_id"])
+
+
+def pattern_analysis_fields(
+    analysis_columns: list[str],
+    identifier_column: str | None = None,
+    missing_markers_by_column: dict[str, list[str]] | None = None,
+    sheet: str | None = None,
+) -> dict[str, str]:
+    """Build the form fields of one pattern analysis request."""
+    form_fields = {"analysis_columns": json.dumps(analysis_columns)}
+    if identifier_column is not None:
+        form_fields["identifier_column"] = identifier_column
+    if missing_markers_by_column is not None:
+        form_fields["missing_markers"] = json.dumps(missing_markers_by_column)
+    if sheet is not None:
+        form_fields["sheet"] = sheet
+
+    return form_fields
+
+
+def run_pattern_analysis_job(
+    test_client: TestClient,
+    csv_bytes: bytes,
+    analysis_columns: list[str],
+    identifier_column: str | None = None,
+    missing_markers_by_column: dict[str, list[str]] | None = None,
+    file_name: str = "data.csv",
+    sheet: str | None = None,
+) -> dict[str, object]:
+    """Run one full pattern analysis job and return its finished status payload."""
+    return run_analysis_job(
+        test_client,
+        file_name,
+        csv_bytes,
+        pattern_analysis_fields(
+            analysis_columns,
+            identifier_column,
+            missing_markers_by_column,
+            sheet,
+        ),
+    )
 
 
 def assert_no_working_files_left(work_directory: Path) -> None:

@@ -7,7 +7,10 @@ with repeating identifier values still count separately.
 
 The file is read in batches so that a long analysis can report how far the
 grouping has come and notice a cancellation request between batches. Counts
-stay exact at every size: every Input Row is tallied exactly once.
+stay exact at every size: every Input Row is tallied exactly once. Alongside the
+counts, a small sample of the Input Rows behind every pattern is kept so the UI
+can show what one pattern looks like; the samples are capped, the counts never
+are.
 """
 
 import json
@@ -31,6 +34,15 @@ PRESENT_STATUS = "present"
 MISSING_STATUS = "missing"
 
 DEFAULT_ANALYSIS_BATCH_ROWS = 50_000
+
+# A preview keeps a small sample of the Input Rows behind one pattern. These
+# caps bound what one analysis holds in memory; the exact counts they accompany
+# are never capped. Every pattern keeps its first sample row before any pattern
+# keeps a second one.
+PREVIEW_ROWS_PER_PATTERN = 5
+PREVIEW_FIRST_ROWS_TOTAL_LIMIT = 20_000
+PREVIEW_EXTRA_ROWS_TOTAL_LIMIT = 20_000
+PREVIEW_VALUE_TEXT_LIMIT = 256
 
 ANALYSIS_COLUMNS_RULES_MESSAGE = (
     "The columns to analyze must be a JSON list of column names from the file."
@@ -60,10 +72,19 @@ class AnalysisInputs:
 
 
 @dataclass(frozen=True)
+class PreviewRow:
+    """One sampled Input Row behind a pattern: identifier text and cell text."""
+
+    identifier_value: str | None
+    values: tuple[str | None, ...]
+
+
+@dataclass(frozen=True)
 class CompletenessPattern:
     statuses: tuple[str, ...]
     count: int
     share: float
+    preview_rows: tuple[PreviewRow, ...]
 
 
 @dataclass(frozen=True)
@@ -72,6 +93,76 @@ class PatternSummary:
     identifier_column: str | None
     analysis_columns: tuple[str, ...]
     patterns: list[CompletenessPattern]
+
+
+class PatternTally:
+    """Exact counts and preview rows collected for every observed pattern.
+
+    Understands the streamed result row: one status per analyzed column first,
+    then the cell text of those columns, then the Identifier Column text.
+    """
+
+    def __init__(self, analysis_column_count: int, identifier_column: str | None) -> None:
+        self.analysis_column_count = analysis_column_count
+        self.identifier_column = identifier_column
+        self.counts: dict[tuple[str, ...], int] = {}
+        self.preview_rows: dict[tuple[str, ...], list[PreviewRow]] = {}
+        self.first_preview_rows_kept = 0
+        self.extra_preview_rows_kept = 0
+
+    def count_input_row(self, result_row: tuple[object, ...]) -> None:
+        statuses = self.statuses_of_row(result_row)
+        self.counts[statuses] = self.counts.get(statuses, 0) + 1
+        self.keep_preview_row(statuses, result_row)
+
+    def statuses_of_row(self, result_row: tuple[object, ...]) -> tuple[str, ...]:
+        statuses = []
+        for status_index in range(self.analysis_column_count):
+            if int(result_row[status_index]) == 1:
+                statuses.append(PRESENT_STATUS)
+            else:
+                statuses.append(MISSING_STATUS)
+
+        return tuple(statuses)
+
+    def keep_preview_row(self, statuses: tuple[str, ...], result_row: tuple[object, ...]) -> None:
+        rows_for_pattern = self.preview_rows.get(statuses, [])
+        if len(rows_for_pattern) >= PREVIEW_ROWS_PER_PATTERN:
+            return
+
+        if not self.claim_sample_slot(len(rows_for_pattern)):
+            return
+
+        rows_for_pattern.append(self.preview_row_of(result_row))
+        self.preview_rows[statuses] = rows_for_pattern
+
+    def claim_sample_slot(self, rows_kept_for_pattern: int) -> bool:
+        """Reserve one sample slot, so every pattern keeps a row before any keeps a second."""
+        if rows_kept_for_pattern == 0:
+            if self.first_preview_rows_kept >= PREVIEW_FIRST_ROWS_TOTAL_LIMIT:
+                return False
+            self.first_preview_rows_kept = self.first_preview_rows_kept + 1
+            return True
+
+        if self.extra_preview_rows_kept >= PREVIEW_EXTRA_ROWS_TOTAL_LIMIT:
+            return False
+        self.extra_preview_rows_kept = self.extra_preview_rows_kept + 1
+        return True
+
+    def preview_row_of(self, result_row: tuple[object, ...]) -> PreviewRow:
+        cell_values_start = self.analysis_column_count
+        cell_values_end = 2 * self.analysis_column_count
+        cell_values = tuple(
+            shortened_cell_text(cell_value)
+            for cell_value in result_row[cell_values_start:cell_values_end]
+        )
+
+        if self.identifier_column is not None:
+            identifier_value = shortened_cell_text(result_row[cell_values_end])
+        else:
+            identifier_value = None
+
+        return PreviewRow(identifier_value=identifier_value, values=cell_values)
 
 
 def parse_analysis_columns(raw_analysis_columns: str | None) -> list[str]:
@@ -130,11 +221,12 @@ def compute_pattern_summary(
     raise_if_cancelled(cancellation_check)
     input_rows = count_input_rows(connection, raw_file_path, column_names)
     raise_if_cancelled(cancellation_check)
-    pattern_counts = tally_pattern_counts(
+    pattern_tally = tally_pattern_counts(
         connection,
         analysis_inputs,
         column_names,
         analysis_columns,
+        identifier_column_name,
         input_rows,
         progress_reporter,
         cancellation_check,
@@ -145,7 +237,7 @@ def compute_pattern_summary(
         input_rows=input_rows,
         identifier_column=identifier_column_name,
         analysis_columns=tuple(analysis_columns),
-        patterns=build_patterns(pattern_counts, input_rows),
+        patterns=build_patterns(pattern_tally, input_rows),
     )
 
 
@@ -213,15 +305,17 @@ def tally_pattern_counts(
     analysis_inputs: AnalysisInputs,
     column_names: list[str],
     analysis_columns: list[str],
+    identifier_column: str | None,
     input_rows: int,
     progress_reporter: Callable[[int, int], None] | None,
     cancellation_check: Callable[[], bool] | None,
     rows_per_batch: int,
-) -> dict[tuple[str, ...], int]:
+) -> PatternTally:
     """Tally every Input Row into its Completeness Pattern, one batch at a time."""
     query = build_pattern_streaming_query(
         column_names,
         analysis_columns,
+        identifier_column,
         analysis_inputs.missing_markers_by_column,
     )
     # Marker values bind first: their placeholders come before the file path
@@ -233,7 +327,10 @@ def tally_pattern_counts(
     query_parameters.append(str(analysis_inputs.analysis_csv_path))
     cursor = connection.execute(query, query_parameters)
 
-    pattern_counts: dict[tuple[str, ...], int] = {}
+    pattern_tally = PatternTally(
+        analysis_column_count=len(analysis_columns),
+        identifier_column=identifier_column,
+    )
     rows_done = 0
     while True:
         raise_if_cancelled(cancellation_check)
@@ -242,42 +339,41 @@ def tally_pattern_counts(
             break
 
         for result_row in batch_rows:
-            statuses = statuses_of_row(result_row, len(analysis_columns))
-            pattern_counts[statuses] = pattern_counts.get(statuses, 0) + 1
+            pattern_tally.count_input_row(result_row)
 
         rows_done = rows_done + len(batch_rows)
         report_progress(progress_reporter, rows_done, input_rows)
 
-    return pattern_counts
+    return pattern_tally
 
 
-def statuses_of_row(result_row: tuple[object, ...], analysis_column_count: int) -> tuple[str, ...]:
-    statuses = []
-    for status_index in range(analysis_column_count):
-        if int(result_row[status_index]) == 1:
-            statuses.append(PRESENT_STATUS)
-        else:
-            statuses.append(MISSING_STATUS)
-
-    return tuple(statuses)
-
-
-def build_patterns(
-    pattern_counts: dict[tuple[str, ...], int],
-    input_rows: int,
-) -> list[CompletenessPattern]:
+def build_patterns(pattern_tally: PatternTally, input_rows: int) -> list[CompletenessPattern]:
     """Order patterns by exact count, with a deterministic tie-break on statuses."""
     patterns = []
-    for statuses, count in sorted(pattern_counts.items(), key=lambda item: (-item[1], item[0])):
+    for statuses, count in sorted(
+        pattern_tally.counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    ):
         patterns.append(
             CompletenessPattern(
                 statuses=statuses,
                 count=count,
                 share=count / input_rows,
+                preview_rows=tuple(pattern_tally.preview_rows.get(statuses, [])),
             )
         )
 
     return patterns
+
+
+def shortened_cell_text(cell_value: str | None) -> str | None:
+    """Shorten one preview value so a hostile or huge cell stays small."""
+    if cell_value is None:
+        return None
+    if len(cell_value) <= PREVIEW_VALUE_TEXT_LIMIT:
+        return cell_value
+
+    return cell_value[:PREVIEW_VALUE_TEXT_LIMIT] + "..."
 
 
 def report_progress(
@@ -297,26 +393,35 @@ def raise_if_cancelled(cancellation_check: Callable[[], bool] | None) -> None:
 def build_pattern_streaming_query(
     column_names: list[str],
     analysis_columns: list[str],
+    identifier_column: str | None,
     missing_markers_by_column: dict[str, list[str]],
 ) -> str:
-    """Build the per-row status query over one status expression per analyzed column.
+    """Build the per-row query behind the tally and the previews.
 
-    The query reads the file under generated working column names so that
-    hostile header values never take part in building SQL text.
+    One status expression per analyzed column comes first, then the cell text of
+    those columns for the previews, then the Identifier Column text. The query
+    reads the file under generated working column names so that hostile header
+    values never take part in building SQL text.
     """
-    status_expressions = []
+    select_expressions = []
     for status_index, column_name in enumerate(analysis_columns):
         working_name = working_column_name(column_names.index(column_name))
         markers = missing_markers_by_column.get(column_name, [])
-        status_expressions.append(
+        select_expressions.append(
             "CASE WHEN "
             + build_present_expression(working_name, len(markers))
             + f" THEN 1 ELSE 0 END AS status_{status_index}"
         )
 
+    for column_name in analysis_columns:
+        select_expressions.append(working_column_name(column_names.index(column_name)))
+
+    if identifier_column is not None:
+        select_expressions.append(working_column_name(column_names.index(identifier_column)))
+
     return (
         "SELECT "
-        + ", ".join(status_expressions)
+        + ", ".join(select_expressions)
         + f" FROM read_csv(?, {CSV_READ_OPTIONS}, columns = "
         + build_working_columns_option(column_names)
         + ")"

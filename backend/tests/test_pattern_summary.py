@@ -10,7 +10,8 @@ from support import (
     assert_no_working_files_left,
     await_analysis_job,
     make_test_client,
-    run_analysis_job,
+    pattern_analysis_fields,
+    run_pattern_analysis_job,
     start_analysis_job,
 )
 
@@ -96,25 +97,12 @@ def status_of(value, markers):
     return "present"
 
 
-def pattern_analysis_fields(
-    analysis_columns,
-    missing_markers_by_column=None,
-    identifier_column=None,
-):
-    form_fields = {"analysis_columns": json.dumps(analysis_columns)}
-    if missing_markers_by_column is not None:
-        form_fields["missing_markers"] = json.dumps(missing_markers_by_column)
-    if identifier_column is not None:
-        form_fields["identifier_column"] = identifier_column
-    return form_fields
-
-
 def request_pattern_analysis(
     test_client,
     csv_bytes,
     analysis_columns,
-    missing_markers_by_column=None,
     identifier_column=None,
+    missing_markers_by_column=None,
     file_name="data.csv",
 ):
     """Start one analysis job for the fixture and return the creation response."""
@@ -122,7 +110,11 @@ def request_pattern_analysis(
         test_client,
         file_name,
         csv_bytes,
-        pattern_analysis_fields(analysis_columns, missing_markers_by_column, identifier_column),
+        pattern_analysis_fields(
+            analysis_columns,
+            identifier_column=identifier_column,
+            missing_markers_by_column=missing_markers_by_column,
+        ),
     )
 
 
@@ -130,16 +122,18 @@ def run_pattern_analysis(
     test_client,
     csv_bytes,
     analysis_columns,
-    missing_markers_by_column=None,
     identifier_column=None,
+    missing_markers_by_column=None,
     file_name="data.csv",
 ):
     """Run one full analysis job for the fixture and return its finished status."""
-    return run_analysis_job(
+    return run_pattern_analysis_job(
         test_client,
-        file_name,
         csv_bytes,
-        pattern_analysis_fields(analysis_columns, missing_markers_by_column, identifier_column),
+        analysis_columns,
+        identifier_column=identifier_column,
+        missing_markers_by_column=missing_markers_by_column,
+        file_name=file_name,
     )
 
 
@@ -160,7 +154,18 @@ def assert_matches_reference(
     assert analysis_result["input_rows"] == expected["input_rows"]
     assert analysis_result["identifier_column"] == expected["identifier_column"]
     assert analysis_result["analysis_columns"] == expected["analysis_columns"]
-    assert analysis_result["patterns"] == expected["patterns"]
+    assert pattern_summary_fields(analysis_result["patterns"]) == expected["patterns"]
+
+
+def pattern_summary_fields(patterns):
+    """Compare the summary rules without the preview rows.
+
+    Preview behavior has its own tests in test_pattern_preview.py.
+    """
+    return [
+        {"statuses": pattern["statuses"], "count": pattern["count"], "share": pattern["share"]}
+        for pattern in patterns
+    ]
 
 
 def test_pattern_summary_matches_independent_reference_on_deterministic_fixture():
@@ -170,7 +175,7 @@ def test_pattern_summary_matches_independent_reference_on_deterministic_fixture(
         client,
         PATTERN_FIXTURE,
         ["email", "phone", "amount"],
-        missing_markers_by_column,
+        missing_markers_by_column=missing_markers_by_column,
         identifier_column="record_id",
     )
 
@@ -286,7 +291,7 @@ def test_default_missing_rules_apply_to_pattern_statuses():
     status = run_pattern_analysis(client, csv_bytes, ["name", "amount"])
 
     assert status["state"] == "succeeded"
-    assert status["result"]["patterns"] == [
+    assert pattern_summary_fields(status["result"]["patterns"]) == [
         {"statuses": ["missing", "present"], "count": 3, "share": 0.75},
         {"statuses": ["present", "present"], "count": 1, "share": 0.25},
     ]
@@ -301,10 +306,15 @@ def test_custom_markers_match_after_trimming_and_without_case():
         b"kept,x\n"
     )
 
-    status = run_pattern_analysis(client, csv_bytes, ["value", "other"], {"value": ["  n/A  "]})
+    status = run_pattern_analysis(
+        client,
+        csv_bytes,
+        ["value", "other"],
+        missing_markers_by_column={"value": ["  n/A  "]},
+    )
 
     assert status["state"] == "succeeded"
-    assert status["result"]["patterns"] == [
+    assert pattern_summary_fields(status["result"]["patterns"]) == [
         {"statuses": ["missing", "present"], "count": 2, "share": 0.5},
         {"statuses": ["missing", "missing"], "count": 1, "share": 0.25},
         {"statuses": ["present", "present"], "count": 1, "share": 0.25},
@@ -316,16 +326,19 @@ def test_zero_is_present_unless_configured_as_a_marker():
 
     default_status = run_pattern_analysis(client, csv_bytes, ["amount", "tally"])
     marker_status = run_pattern_analysis(
-        client, csv_bytes, ["amount", "tally"], {"amount": ["0"]}
+        client,
+        csv_bytes,
+        ["amount", "tally"],
+        missing_markers_by_column={"amount": ["0"]},
     )
 
     assert default_status["state"] == "succeeded"
-    assert default_status["result"]["patterns"] == [
+    assert pattern_summary_fields(default_status["result"]["patterns"]) == [
         {"statuses": ["present", "present"], "count": 3, "share": 1.0},
     ]
 
     assert marker_status["state"] == "succeeded"
-    assert marker_status["result"]["patterns"] == [
+    assert pattern_summary_fields(marker_status["result"]["patterns"]) == [
         {"statuses": ["missing", "present"], "count": 2, "share": 2 / 3},
         {"statuses": ["present", "present"], "count": 1, "share": 1 / 3},
     ]
@@ -342,7 +355,7 @@ def test_patterns_with_equal_counts_are_ordered_deterministically():
     status = run_pattern_analysis(client, csv_bytes, ["a", "b"])
 
     assert status["state"] == "succeeded"
-    assert status["result"]["patterns"] == [
+    assert pattern_summary_fields(status["result"]["patterns"]) == [
         {"statuses": ["missing", "present"], "count": 1, "share": 1 / 3},
         {"statuses": ["present", "missing"], "count": 1, "share": 1 / 3},
         {"statuses": ["present", "present"], "count": 1, "share": 1 / 3},
@@ -456,7 +469,7 @@ def test_analysis_rejects_missing_markers_for_unknown_columns_with_clear_error()
         client,
         PATTERN_FIXTURE,
         ["email"],
-        {"nickname": ["n/a"]},
+        missing_markers_by_column={"nickname": ["n/a"]},
     )
 
     assert response.status_code == 400

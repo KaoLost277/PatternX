@@ -29,6 +29,7 @@ from app.patterns import (
     DEFAULT_ANALYSIS_BATCH_ROWS,
     AnalysisInputs,
     ColumnSelectionError,
+    CompletenessPattern,
     PatternSummary,
     parse_analysis_columns,
     normalize_identifier_column,
@@ -436,6 +437,7 @@ def pattern_summary_response(summary: PatternSummary) -> dict[str, object]:
                 "statuses": list(pattern.statuses),
                 "count": pattern.count,
                 "share": pattern.share,
+                "preview_rows": preview_rows_response(pattern),
             }
         )
 
@@ -445,6 +447,19 @@ def pattern_summary_response(summary: PatternSummary) -> dict[str, object]:
         "analysis_columns": list(summary.analysis_columns),
         "patterns": patterns,
     }
+
+
+def preview_rows_response(pattern: CompletenessPattern) -> list[dict[str, object]]:
+    preview_rows = []
+    for preview_row in pattern.preview_rows:
+        preview_rows.append(
+            {
+                "identifier_value": preview_row.identifier_value,
+                "values": list(preview_row.values),
+            }
+        )
+
+    return preview_rows
 
 
 app = create_application(default_work_directory())

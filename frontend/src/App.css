@@ -403,3 +403,20 @@
   background-color: #64748b;
   border-radius: 999px;
 }
+
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-value {
+  color: #334155;
+  overflow-wrap: anywhere;
+}

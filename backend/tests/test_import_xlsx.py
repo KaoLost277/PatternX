@@ -9,7 +9,7 @@ from support import (
     assert_no_working_files_left,
     make_test_client,
     make_workbook_bytes,
-    run_analysis_job,
+    run_pattern_analysis_job,
     start_analysis_job,
 )
 
@@ -87,15 +87,15 @@ def run_pattern_analysis(
     identifier_column=None,
 ):
     """Run one full analysis job for the file and return its finished status."""
-    form_fields = {"analysis_columns": json.dumps(analysis_columns)}
-    if sheet is not None:
-        form_fields["sheet"] = sheet
-    if missing_markers_by_column is not None:
-        form_fields["missing_markers"] = json.dumps(missing_markers_by_column)
-    if identifier_column is not None:
-        form_fields["identifier_column"] = identifier_column
-
-    return run_analysis_job(test_client, file_name, file_bytes, form_fields)
+    return run_pattern_analysis_job(
+        test_client,
+        file_bytes,
+        analysis_columns,
+        identifier_column=identifier_column,
+        missing_markers_by_column=missing_markers_by_column,
+        file_name=file_name,
+        sheet=sheet,
+    )
 
 
 def make_row_limit_workbook_bytes(data_rows: int) -> bytes:
@@ -275,22 +275,22 @@ def test_pattern_summary_on_a_sheet_matches_the_same_data_as_csv():
     workbook_bytes = make_workbook_bytes({"Data": SHEET_ROWS})
     missing_markers_by_column = {"email": ["unknown"], "amount": ["-"]}
 
-    workbook_status = run_pattern_analysis(
+    workbook_status = run_pattern_analysis_job(
         client,
-        "workbook.xlsx",
         workbook_bytes,
         ["email", "phone", "amount"],
-        sheet="Data",
-        missing_markers_by_column=missing_markers_by_column,
         identifier_column="record_id",
+        missing_markers_by_column=missing_markers_by_column,
+        file_name="workbook.xlsx",
+        sheet="Data",
     )
-    csv_status = run_pattern_analysis(
+    csv_status = run_pattern_analysis_job(
         client,
-        "data.csv",
         SAME_DATA_AS_CSV,
         ["email", "phone", "amount"],
-        missing_markers_by_column=missing_markers_by_column,
         identifier_column="record_id",
+        missing_markers_by_column=missing_markers_by_column,
+        file_name="data.csv",
     )
 
     assert workbook_status["state"] == "succeeded"
