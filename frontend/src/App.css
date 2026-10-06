@@ -74,3 +74,105 @@
   border-radius: 8px;
   overflow-wrap: anywhere;
 }
+
+.summary-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.summary-table-frame {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #334155;
+}
+
+.summary-table th,
+.summary-table td {
+  padding: 10px 14px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #e2e8f0;
+  overflow-wrap: anywhere;
+}
+
+.summary-table thead th {
+  color: #475569;
+  background-color: #f8fafc;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.summary-table tbody th {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.summary-table tbody tr:last-child th,
+.summary-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.marker-input {
+  width: 100%;
+  min-width: 180px;
+  padding: 8px 10px;
+  font: inherit;
+  color: #334155;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.marker-input:hover {
+  border-color: #94a3b8;
+}
+
+.marker-input:focus {
+  border-color: #64748b;
+  outline: 2px solid #cbd5e1;
+  outline-offset: 1px;
+}
+
+.summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.primary-button {
+  padding: 10px 18px;
+  font: inherit;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #334155;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.primary-button:hover:enabled {
+  background-color: #1e293b;
+  border-color: #1e293b;
+}
+
+.primary-button:disabled {
+  background-color: #94a3b8;
+  border-color: #94a3b8;
+  cursor: default;
+}
+
+.hint-text {
+  margin: 0;
+  flex: 1 1 260px;
+  color: #64748b;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}

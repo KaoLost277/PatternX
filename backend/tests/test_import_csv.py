@@ -1,20 +1,9 @@
-from pathlib import Path
-
 from fastapi.testclient import TestClient
 
-from app.main import app, create_application
+from app.main import app
+from support import assert_no_working_files_left, make_test_client
 
 client = TestClient(app)
-
-
-def make_test_client(work_directory: Path) -> TestClient:
-    application = create_application(work_directory)
-    return TestClient(application)
-
-
-def assert_no_working_files_left(work_directory: Path) -> None:
-    assert list((work_directory / "uploads").iterdir()) == []
-    assert list((work_directory / "duckdb").iterdir()) == []
 
 
 def test_import_returns_column_names_in_file_order():

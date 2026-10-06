@@ -7,8 +7,10 @@ and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
 
 ## Current status
 
-The first vertical slice is in place: start the app locally, import a CSV file, and see the column
-names it contains. Analysis, exports, and the rest of the workflow follow in later tickets.
+You can import a CSV file and see the Column Completeness Summary: for every column, the exact count
+and share of Input Rows with a present value. Null, empty, and whitespace-only values are missing by
+default, additional missing value markers can be configured per column, and zero counts as present.
+Pattern analysis, exports, and the rest of the workflow follow in later tickets.
 
 ## Prerequisites
 
@@ -34,6 +36,14 @@ and install dependencies on first run.
 
 The API listens on http://127.0.0.1:8000, bound to loopback only. The web UI talks to it through a
 local proxy. The application makes no external runtime requests and loads no external assets.
+
+## Input files
+
+CSV files are read as comma-separated text with the header row in the first line (UTF-8, with or
+without a byte order mark). Each data line is one Input Row, counted as it appears in the file, so
+rows that repeat an identifier value still count separately. A completely blank line carries no
+fields and is not an Input Row; in a one-column file an empty line is a record with one empty value
+and therefore is an Input Row with a missing value.
 
 ## Tests
 
