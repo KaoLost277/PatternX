@@ -23,43 +23,7 @@ function Write-AgentLoopModelSummary {
     Write-Host $summary
 }
 
-function Ensure-AgentLoopPester {
-    $requiredVersion = [version]"5.7.1"
-    $availablePester = Find-AgentLoopPesterModule -Version $requiredVersion
-
-    if ($availablePester.Count -eq 0) {
-        Write-Host "Installing Pester $requiredVersion for the current user."
-        Install-Module `
-            -Name Pester `
-            -RequiredVersion $requiredVersion `
-            -Scope CurrentUser `
-            -Repository PSGallery `
-            -Force `
-            -SkipPublisherCheck
-
-        $availablePester = Find-AgentLoopPesterModule -Version $requiredVersion
-    }
-
-    if ($availablePester.Count -eq 0) {
-        throw "Pester $requiredVersion could not be installed for the current user."
-    }
-
-    Import-Module Pester -RequiredVersion $requiredVersion -Force
-}
-
-function Find-AgentLoopPesterModule {
-    param(
-        [Parameter(Mandatory = $true)]
-        [version]$Version
-    )
-
-    return Get-Module -ListAvailable -Name Pester |
-        Where-Object { $_.Version -eq $Version } |
-        Select-Object -First 1
-}
-
 Import-Module $modulePath -Force
-Ensure-AgentLoopPester
 
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $ConfigPath = Get-AgentLoopConfigurationPath
@@ -92,6 +56,8 @@ else {
         -CommandAdapter (New-AgentLoopCommandAdapter) `
         -WorkingDirectory $repositoryRoot
 }
+
+Install-AgentLoopPester
 
 Write-Host "Agent loop setup is ready for $($setupResult.Repository)."
 if ($reuseExistingConfiguration) {

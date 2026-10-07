@@ -23,10 +23,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Pester
-        shell: pwsh
-        run: Install-Module -Name Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -Repository PSGallery -SkipPublisherCheck
-
       - name: Test local agent-loop setup
         shell: pwsh
         working-directory: ${{ runner.temp }}

@@ -56,6 +56,44 @@ function Get-AgentLoopConfigurationPath {
     return Join-Path $configurationDirectory "agent-loop.json"
 }
 
+function Find-AgentLoopPesterModule {
+    param(
+        [Parameter(Mandatory = $true)]
+        [version]$Version
+    )
+
+    return Get-Module -ListAvailable -Name Pester |
+        Where-Object { $_.Version -eq $Version } |
+        Select-Object -First 1
+}
+
+function Install-AgentLoopPester {
+    [CmdletBinding()]
+    param()
+
+    $requiredVersion = [version]"5.7.1"
+    $availablePester = Find-AgentLoopPesterModule -Version $requiredVersion
+
+    if ($null -eq $availablePester) {
+        Write-Host "Installing Pester $requiredVersion for the current user."
+        Install-Module `
+            -Name Pester `
+            -RequiredVersion $requiredVersion `
+            -Scope CurrentUser `
+            -Repository PSGallery `
+            -Force `
+            -SkipPublisherCheck
+
+        $availablePester = Find-AgentLoopPesterModule -Version $requiredVersion
+    }
+
+    if ($null -eq $availablePester) {
+        throw "Pester $requiredVersion could not be installed for the current user."
+    }
+
+    Import-Module Pester -RequiredVersion $requiredVersion -Force
+}
+
 function Invoke-AgentLoopCommand {
     [CmdletBinding()]
     param(
@@ -104,6 +142,21 @@ function ConvertFrom-AgentLoopJson {
     catch {
         throw "$ErrorMessage $($_.Exception.Message)"
     }
+}
+
+function Get-AgentLoopRepositoryFromRemote {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RemoteUrl
+    )
+
+    $remotePattern = '^(?:https?://(?:[^/@]+@)?github\.com/|git@github\.com:|ssh://(?:[^/@]+@)?github\.com/)(?<repository>[^?#]+?)(?:\.git)?/?$'
+    $remoteMatch = [regex]::Match($RemoteUrl.Trim(), $remotePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $remoteMatch.Success) {
+        throw "Git origin must be a GitHub repository URL."
+    }
+
+    return $remoteMatch.Groups["repository"].Value.TrimEnd("/")
 }
 
 function Get-AgentLoopAvailableModels {
@@ -358,13 +411,30 @@ function Invoke-AgentLoopSetup {
         [switch]$ValidateOnly
     )
 
+    $gitRootResult = Invoke-AgentLoopCommand `
+        -CommandAdapter $CommandAdapter `
+        -Executable "git" `
+        -Arguments @("rev-parse", "--show-toplevel") `
+        -WorkingDirectory $WorkingDirectory
+    $gitRoot = [string]$gitRootResult.StdOut
+    if ([string]::IsNullOrWhiteSpace($gitRoot)) {
+        throw "Git did not report the repository root for the current location."
+    }
+
+    $originResult = Invoke-AgentLoopCommand `
+        -CommandAdapter $CommandAdapter `
+        -Executable "git" `
+        -Arguments @("remote", "get-url", "origin") `
+        -WorkingDirectory $WorkingDirectory
+    $originRepository = Get-AgentLoopRepositoryFromRemote -RemoteUrl ([string]$originResult.StdOut)
+
     $versionResult = Invoke-AgentLoopCommand `
         -CommandAdapter $CommandAdapter `
         -Executable "opencode" `
         -Arguments @("--version") `
         -WorkingDirectory $WorkingDirectory
 
-    if ([string]$versionResult.StdOut -notmatch "opencode v?2\.") {
+    if ([string]$versionResult.StdOut -notmatch "(?i)(?:^|\s)(?:opencode\s+)?v?2\.\d+(?:\.\d+)?(?:\s|$)") {
         throw "OpenCode V2 is required. Detected: $($versionResult.StdOut)"
     }
 
@@ -421,6 +491,9 @@ function Invoke-AgentLoopSetup {
 
     if ([string]::IsNullOrWhiteSpace($repositoryName)) {
         throw "GitHub CLI did not identify the current repository."
+    }
+    if (-not [string]::Equals($originRepository, $repositoryName, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Git origin '$originRepository' does not match the GitHub repository '$repositoryName'."
     }
     if ([string]::IsNullOrWhiteSpace($defaultBranch)) {
         throw "The GitHub repository has no default branch."
@@ -596,6 +669,7 @@ function Test-AgentLoopSetupConfiguration {
 Export-ModuleMember -Function `
     Get-AgentLoopConfigurationPath, `
     Get-AgentLoopAvailableModels, `
+    Install-AgentLoopPester, `
     Invoke-AgentLoopCommand, `
     Invoke-AgentLoopSetup, `
     New-AgentLoopCommandAdapter, `

@@ -205,9 +205,19 @@ BeforeAll {
         }
 
         return @{
+            "git rev-parse --show-toplevel" = [pscustomobject]@{
+                ExitCode = 0
+                StdOut = "C:\repo"
+                StdErr = ""
+            }
+            "git remote get-url origin" = [pscustomobject]@{
+                ExitCode = 0
+                StdOut = "https://github.com/KaoLost277/PatternX.git"
+                StdErr = ""
+            }
             "opencode --version" = [pscustomobject]@{
                 ExitCode = 0
-                StdOut = "opencode v2.0.24"
+                StdOut = "2.0.24"
                 StdErr = ""
             }
             "opencode api get /api/model" = [pscustomobject]@{
@@ -284,7 +294,8 @@ Describe "Invoke-AgentLoopSetup" {
         $savedConfiguration.Models.Reviewers[0].Argument | Should -Be "openrouter/anthropic/claude-opus-5.5#high"
         $savedConfiguration.Models.Reviewers[1].Argument | Should -Be "openrouter/x-ai/grok-4.7#xhigh"
         $savedConfiguration.ReasoningBudget | Should -Be "large"
-        $fakeCommandAdapter.Calls.Count | Should -Be 4
+        $fakeCommandAdapter.Calls.Count | Should -Be 6
+        ($fakeCommandAdapter.Calls | Where-Object { $_.Executable -eq "git" }).Count | Should -Be 2
         ($fakeCommandAdapter.Calls | Where-Object { $_.Executable -eq "gh" }).Count | Should -Be 2
         ((Get-Content $configurationPath -Raw) -match "token|secret|api.?key") | Should -Be $false
     }
@@ -307,6 +318,28 @@ Describe "Invoke-AgentLoopSetup" {
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+
+    It "refuses a local Git checkout whose origin differs from the GitHub repository" {
+        $responses = New-AgentLoopSetupResponses
+        $responses["git remote get-url origin"] = [pscustomobject]@{
+            ExitCode = 0
+            StdOut = "https://github.com/someone-else/another-repo.git"
+            StdErr = ""
+        }
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $configurationPath = Join-Path $TestDrive "mismatched-origin-agent-loop.json"
+        $setupSelection = New-AgentLoopDefaultSetupSelection
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -SetupSelection $setupSelection `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*origin*does not match*"
 
         (Test-Path $configurationPath) | Should -Be $false
     }
