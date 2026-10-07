@@ -36,6 +36,7 @@ function patternDetailsProps(overrides = {}) {
     onRetry: () => {},
     exportLoading: false,
     exportError: null,
+    exportSuccess: null,
     onExport: () => {},
     onClose: () => {},
     ...overrides,
@@ -67,6 +68,7 @@ test("the populated View rows panel contains a semantic table of every returned 
     onRetry: () => {},
     exportLoading: false,
     exportError: null,
+    exportSuccess: null,
     onExport: () => {},
     onClose: () => {},
   });
@@ -285,6 +287,15 @@ test("pattern details offer an accessible full-row CSV export and show retryable
   assert.ok(loadingButton);
   assert.match(loadingButton, /disabled=""/);
   assert.match(loadingMarkup, /Preparing the full pattern export/);
+});
+
+test("pattern details announce when the CSV download starts", async () => {
+  const markup = await renderPatternDetails(
+    patternDetailsProps({ patternCount: 2, exportSuccess: "CSV download started." }),
+  );
+
+  assert.match(markup, /role="status"/);
+  assert.match(markup, /CSV download started\./);
 });
 
 test("pattern details navigate 50-row pages and disable unavailable directions", async () => {

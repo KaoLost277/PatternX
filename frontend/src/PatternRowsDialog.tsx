@@ -12,6 +12,7 @@ interface PatternRowsDialogProps {
   onRetry: () => void;
   exportLoading: boolean;
   exportError: string | null;
+  exportSuccess: string | null;
   onExport: () => void;
   onClose: () => void;
 }
@@ -26,6 +27,7 @@ export function PatternRowsDialog({
   onRetry,
   exportLoading,
   exportError,
+  exportSuccess = null,
   onExport,
   onClose,
 }: PatternRowsDialogProps) {
@@ -92,6 +94,11 @@ export function PatternRowsDialog({
         {exportError !== null && (
           <p className="error-message pattern-rows-export-error" role="alert">
             {exportError}
+          </p>
+        )}
+        {exportSuccess !== null && (
+          <p className="status-line" role="status">
+            {exportSuccess}
           </p>
         )}
       </div>

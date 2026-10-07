@@ -270,6 +270,7 @@ function App() {
   const [patternRowsRetryNumber, setPatternRowsRetryNumber] = useState<number>(0);
   const [patternRowsExportLoading, setPatternRowsExportLoading] = useState<boolean>(false);
   const [patternRowsExportError, setPatternRowsExportError] = useState<string | null>(null);
+  const [patternRowsExportSuccess, setPatternRowsExportSuccess] = useState<string | null>(null);
   const [showAllPatterns, setShowAllPatterns] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -328,6 +329,7 @@ function App() {
     setPatternRowsError(null);
     setPatternRowsExportLoading(false);
     setPatternRowsExportError(null);
+    setPatternRowsExportSuccess(null);
   }
 
   function resetPatternViewState() {
@@ -572,6 +574,7 @@ function App() {
     setPatternRowsError(null);
     setPatternRowsExportLoading(false);
     setPatternRowsExportError(null);
+    setPatternRowsExportSuccess(null);
     setSelectedPatternIndex(patternIndex);
   }
 
@@ -603,9 +606,12 @@ function App() {
 
     setPatternRowsExportLoading(true);
     setPatternRowsExportError(null);
+    setPatternRowsExportSuccess(null);
     try {
       await downloadPatternRowsCsv(analysisJob.job_id, selectedPatternIndex);
+      setPatternRowsExportSuccess("CSV download started.");
     } catch (error: unknown) {
+      setPatternRowsExportSuccess(null);
       setPatternRowsExportError(
         error instanceof PatternRowsRequestError
           ? error.message
@@ -1117,6 +1123,7 @@ function App() {
             onRetry={handlePatternRowsRetry}
             exportLoading={patternRowsExportLoading}
             exportError={patternRowsExportError}
+            exportSuccess={patternRowsExportSuccess}
             onExport={handlePatternRowsExport}
             onClose={handlePatternPreviewClosed}
           />
