@@ -30,7 +30,8 @@ jobs:
       - name: Test local agent-loop setup
         shell: pwsh
         working-directory: ${{ runner.temp }}
-        run: Invoke-Pester -Path "$env:GITHUB_WORKSPACE/tests/powershell" -CI
+        run: |
+          & "$env:GITHUB_WORKSPACE/scripts/agent-loop/test-agent-loop.ps1"
 
       - name: Set up Python
         uses: actions/setup-python@v5

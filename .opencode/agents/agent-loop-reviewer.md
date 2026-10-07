@@ -14,9 +14,6 @@ permissions:
   - action: glob
     resource: "*"
     effect: allow
-  - action: grep
-    resource: "*"
-    effect: allow
   - action: read
     resource: "*.env*"
     effect: deny
@@ -24,7 +21,13 @@ permissions:
     resource: "*secrets/*"
     effect: deny
   - action: read
+    resource: "*secret*"
+    effect: deny
+  - action: read
     resource: "*credentials*"
+    effect: deny
+  - action: read
+    resource: "*creds*"
     effect: deny
   - action: read
     resource: "*.pem"

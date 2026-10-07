@@ -147,6 +147,29 @@ Describe "Invoke-AgentLoopSetup" {
         $configurationPath | Should -Match "PatternX[\\/]agent-loop\.json$"
     }
 
+    It "revalidates an existing setup without changing its saved model choices" {
+        $configurationPath = Join-Path $TestDrive "revalidated-agent-loop.json"
+        $selection = New-AgentLoopDefaultSelection
+        $setupAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+
+        Invoke-AgentLoopSetup `
+            -ConfigPath $configurationPath `
+            -ModelSelection $selection `
+            -ReasoningBudget "large" `
+            -CommandAdapter $setupAdapter.Invoke `
+            -WorkingDirectory $TestDrive | Out-Null
+
+        $configurationBeforeValidation = Get-Content $configurationPath -Raw
+        $validationAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $result = Test-AgentLoopSetupConfiguration `
+            -ConfigPath $configurationPath `
+            -CommandAdapter $validationAdapter.Invoke `
+            -WorkingDirectory $TestDrive
+
+        $result.GitHubScopeStatus | Should -Be "verified"
+        (Get-Content $configurationPath -Raw) | Should -Be $configurationBeforeValidation
+    }
+
     It "validates the local tools and writes the selected role models without credentials" {
         $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "agent-loop.json"
@@ -222,7 +245,7 @@ Describe "Invoke-AgentLoopSetup" {
         (Test-Path $configurationPath) | Should -Be $false
     }
 
-    It "refuses GitHub credentials when token write scopes cannot be verified" {
+    It "records when GitHub hides token write scopes for the run-time issue-claim check" {
         $responses = New-AgentLoopSetupResponses
         $responses["gh auth status"] = [pscustomobject]@{
             ExitCode = 0
@@ -233,16 +256,15 @@ Describe "Invoke-AgentLoopSetup" {
         $configurationPath = Join-Path $TestDrive "unknown-write-scope-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection
 
-        {
-            Invoke-AgentLoopSetup `
-                -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
-                -CommandAdapter $fake.Invoke `
-                -WorkingDirectory $TestDrive
-        } | Should -Throw -ExpectedMessage "*scope*"
+        $result = Invoke-AgentLoopSetup `
+            -ConfigPath $configurationPath `
+            -ModelSelection $selection `
+            -ReasoningBudget "large" `
+            -CommandAdapter $fake.Invoke `
+            -WorkingDirectory $TestDrive
 
-        (Test-Path $configurationPath) | Should -Be $false
+        $result.GitHubScopeStatus | Should -Be "not-exposed"
+        (Test-Path $configurationPath) | Should -Be $true
     }
 
     It "allows distinct reviewer models from the same family" {
@@ -387,10 +409,18 @@ Describe "Agent-loop OpenCode permissions" {
         $workerProfile | Should -Match 'action: external_directory\s+resource: "\*"\s+effect: deny'
         $workerProfile | Should -Match 'resource: "\*\.env\*"\s+effect: deny'
         $workerProfile | Should -Match 'resource: "\*secrets/\*"\s+effect: deny'
+        $workerProfile | Should -Match 'resource: "\*secret\*"\s+effect: deny'
         $workerProfile | Should -Match 'resource: "\*\.env\.example"\s+effect: allow'
+        $workerProfile | Should -Match 'resource: "python -m pytest -q backend"\s+effect: allow'
+        $workerProfile | Should -Match 'scripts/agent-loop/test-agent-loop\.ps1'
+        $workerProfile | Should -Match 'action: edit\s+resource: "\*secret\*"\s+effect: deny'
+        $workerProfile | Should -Not -Match 'action: grep\s+resource: "\*"\s+effect: allow'
+        $workerProfile | Should -Not -Match 'action: shell\s+resource: "git '
         $reviewerProfile | Should -Match 'action: "\*"\s+resource: "\*"\s+effect: deny'
         $reviewerProfile | Should -Match 'action: external_directory\s+resource: "\*"\s+effect: deny'
+        $reviewerProfile | Should -Match 'resource: "\*secret\*"\s+effect: deny'
         $reviewerProfile | Should -Match 'resource: "\*\.env\.example"\s+effect: allow'
+        $reviewerProfile | Should -Not -Match 'action: grep\s+resource: "\*"\s+effect: allow'
         $reviewerProfile | Should -Not -Match 'action: edit'
         $reviewerProfile | Should -Not -Match 'action: shell'
     }

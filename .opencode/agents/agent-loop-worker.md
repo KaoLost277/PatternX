@@ -14,9 +14,6 @@ permissions:
   - action: glob
     resource: "*"
     effect: allow
-  - action: grep
-    resource: "*"
-    effect: allow
   - action: edit
     resource: "*"
     effect: allow
@@ -30,16 +27,13 @@ permissions:
     resource: "npm run build --prefix frontend"
     effect: allow
   - action: shell
-    resource: "git status --short"
+    resource: "python -m pytest -q backend"
     effect: allow
   - action: shell
-    resource: "git diff --check"
+    resource: "powershell -NoProfile -File scripts/agent-loop/test-agent-loop.ps1"
     effect: allow
   - action: shell
-    resource: "git diff -- ."
-    effect: allow
-  - action: shell
-    resource: "git diff --cached -- ."
+    resource: "pwsh -NoProfile -File scripts/agent-loop/test-agent-loop.ps1"
     effect: allow
   - action: read
     resource: "*.env*"
@@ -48,7 +42,13 @@ permissions:
     resource: "*secrets/*"
     effect: deny
   - action: read
+    resource: "*secret*"
+    effect: deny
+  - action: read
     resource: "*credentials*"
+    effect: deny
+  - action: read
+    resource: "*creds*"
     effect: deny
   - action: read
     resource: "*.pem"
@@ -77,6 +77,51 @@ permissions:
   - action: read
     resource: "*.netrc"
     effect: deny
+  - action: edit
+    resource: "*.env*"
+    effect: deny
+  - action: edit
+    resource: "*secrets/*"
+    effect: deny
+  - action: edit
+    resource: "*secret*"
+    effect: deny
+  - action: edit
+    resource: "*credentials*"
+    effect: deny
+  - action: edit
+    resource: "*creds*"
+    effect: deny
+  - action: edit
+    resource: "*.pem"
+    effect: deny
+  - action: edit
+    resource: "*.key"
+    effect: deny
+  - action: edit
+    resource: "*.p12"
+    effect: deny
+  - action: edit
+    resource: "*.pfx"
+    effect: deny
+  - action: edit
+    resource: "*.jks"
+    effect: deny
+  - action: edit
+    resource: "*.kdbx"
+    effect: deny
+  - action: edit
+    resource: "*.npmrc"
+    effect: deny
+  - action: edit
+    resource: "*.pypirc"
+    effect: deny
+  - action: edit
+    resource: "*.netrc"
+    effect: deny
+  - action: edit
+    resource: "*.env.example"
+    effect: allow
   - action: read
     resource: "*.env.example"
     effect: allow

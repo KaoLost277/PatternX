@@ -89,6 +89,23 @@ function Invoke-AgentLoopCommand {
     return $result
 }
 
+function ConvertFrom-AgentLoopJson {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Json,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ErrorMessage
+    )
+
+    try {
+        return ConvertFrom-Json -InputObject $Json
+    }
+    catch {
+        throw "$ErrorMessage $($_.Exception.Message)"
+    }
+}
+
 function Get-AgentLoopAvailableModels {
     [CmdletBinding()]
     param(
@@ -331,7 +348,9 @@ function Invoke-AgentLoopSetup {
         [Parameter(Mandatory = $true)]
         [scriptblock]$CommandAdapter,
 
-        [string]$WorkingDirectory = (Get-Location).Path
+        [string]$WorkingDirectory = (Get-Location).Path,
+
+        [switch]$ValidateOnly
     )
 
     $versionResult = Invoke-AgentLoopCommand `
@@ -350,12 +369,9 @@ function Invoke-AgentLoopSetup {
         -Arguments @("api", "get", "/api/model") `
         -WorkingDirectory $WorkingDirectory
 
-    try {
-        $catalogResponse = ConvertFrom-Json -InputObject $catalogResult.StdOut
-    }
-    catch {
-        throw "OpenCode returned an invalid model catalog. $($_.Exception.Message)"
-    }
+    $catalogResponse = ConvertFrom-AgentLoopJson `
+        -Json $catalogResult.StdOut `
+        -ErrorMessage "OpenCode returned an invalid model catalog."
 
     $availableModels = Get-AgentLoopAvailableModels -CatalogResponse @($catalogResponse)
     if ($availableModels.Count -eq 0) {
@@ -384,12 +400,9 @@ function Invoke-AgentLoopSetup {
         -Arguments @("repo", "view", "--json", "nameWithOwner,defaultBranchRef,viewerPermission,isPrivate") `
         -WorkingDirectory $WorkingDirectory
 
-    try {
-        $repository = ConvertFrom-Json -InputObject $repositoryResult.StdOut
-    }
-    catch {
-        throw "GitHub CLI returned invalid repository information. $($_.Exception.Message)"
-    }
+    $repository = ConvertFrom-AgentLoopJson `
+        -Json $repositoryResult.StdOut `
+        -ErrorMessage "GitHub CLI returned invalid repository information."
 
     $repositoryName = [string]$repository.nameWithOwner
     $defaultBranch = ""
@@ -417,16 +430,15 @@ function Invoke-AgentLoopSetup {
         throw "GitHub access must include write permission to create branches and pull requests."
     }
 
-    if ($tokenScopes.Count -eq 0 -or $tokenScopes -contains "none") {
-        throw "GitHub CLI did not expose token scopes. Authenticate with a token that exposes repository write access before running setup."
+    $githubScopeStatus = "not-exposed"
+    if ($tokenScopes.Count -gt 0 -and $tokenScopes -notcontains "none") {
+        $hasRepositoryScope = $tokenScopes -contains "repo"
+        $hasPublicRepositoryScope = -not $isPrivateProperty.Value -and $tokenScopes -contains "public_repo"
+        if (-not $hasRepositoryScope -and -not $hasPublicRepositoryScope) {
+            throw "The GitHub token is missing the repository write scope required by the agent loop."
+        }
+        $githubScopeStatus = "verified"
     }
-
-    $hasRepositoryScope = $tokenScopes -contains "repo"
-    $hasPublicRepositoryScope = -not $isPrivateProperty.Value -and $tokenScopes -contains "public_repo"
-    if (-not $hasRepositoryScope -and -not $hasPublicRepositoryScope) {
-        throw "The GitHub token is missing the repository write scope required by the agent loop."
-    }
-    $githubScopeStatus = "verified"
 
     if ($null -eq $ModelSelection -or [string]::IsNullOrWhiteSpace($ReasoningBudget)) {
         $interactiveSelection = Get-AgentLoopInteractiveModelSelection -AvailableModels $availableModels
@@ -466,23 +478,61 @@ function Invoke-AgentLoopSetup {
         Models = $resolvedModels
     }
 
-    $configurationDirectory = Split-Path -Parent $ConfigPath
-    if (-not (Test-Path -LiteralPath $configurationDirectory)) {
-        New-Item -ItemType Directory -Path $configurationDirectory -Force | Out-Null
-    }
-
-    $temporaryConfigPath = "$ConfigPath.$PID.tmp"
-    $configurationJson = ConvertTo-Json -InputObject $configuration -Depth 8
-
-    try {
-        Set-Content -LiteralPath $temporaryConfigPath -Value $configurationJson -Encoding UTF8
-        Move-Item -LiteralPath $temporaryConfigPath -Destination $ConfigPath -Force
-    }
-    catch {
-        if (Test-Path -LiteralPath $temporaryConfigPath) {
-            Remove-Item -LiteralPath $temporaryConfigPath -Force
+    if ($ValidateOnly) {
+        if (-not (Test-Path -LiteralPath $ConfigPath)) {
+            throw "No saved agent-loop configuration exists at '$ConfigPath'."
         }
-        throw
+
+        $savedConfiguration = ConvertFrom-AgentLoopJson `
+            -Json (Get-Content -LiteralPath $ConfigPath -Raw) `
+            -ErrorMessage "The saved agent-loop configuration is invalid."
+
+        if ($savedConfiguration.Repository -ne $configuration.Repository -or
+            $savedConfiguration.DefaultBranch -ne $configuration.DefaultBranch -or
+            $savedConfiguration.ReasoningBudget -ne $configuration.ReasoningBudget) {
+            throw "The saved agent-loop configuration is stale for this repository or its default branch."
+        }
+
+        $savedRoles = @(
+            $savedConfiguration.Models.Implementer
+            $savedConfiguration.Models.Repairer
+            $savedConfiguration.Models.Reviewers[0]
+            $savedConfiguration.Models.Reviewers[1]
+        )
+        $currentRoles = @(
+            $configuration.Models.Implementer
+            $configuration.Models.Repairer
+            $configuration.Models.Reviewers[0]
+            $configuration.Models.Reviewers[1]
+        )
+
+        for ($roleIndex = 0; $roleIndex -lt $currentRoles.Count; $roleIndex++) {
+            if ($savedRoles[$roleIndex].Id -ne $currentRoles[$roleIndex].Id -or
+                $savedRoles[$roleIndex].Argument -ne $currentRoles[$roleIndex].Argument) {
+                throw "The saved model selection or reasoning variant for role $($roleIndex + 1) is no longer available."
+            }
+        }
+    }
+
+    if (-not $ValidateOnly) {
+        $configurationDirectory = Split-Path -Parent $ConfigPath
+        if (-not (Test-Path -LiteralPath $configurationDirectory)) {
+            New-Item -ItemType Directory -Path $configurationDirectory -Force | Out-Null
+        }
+
+        $temporaryConfigPath = "$ConfigPath.$PID.tmp"
+        $configurationJson = ConvertTo-Json -InputObject $configuration -Depth 8
+
+        try {
+            Set-Content -LiteralPath $temporaryConfigPath -Value $configurationJson -Encoding UTF8
+            Move-Item -LiteralPath $temporaryConfigPath -Destination $ConfigPath -Force
+        }
+        catch {
+            if (Test-Path -LiteralPath $temporaryConfigPath) {
+                Remove-Item -LiteralPath $temporaryConfigPath -Force
+            }
+            throw
+        }
     }
 
     return [pscustomobject]@{
@@ -495,9 +545,47 @@ function Invoke-AgentLoopSetup {
     }
 }
 
+function Test-AgentLoopSetupConfiguration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigPath,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$CommandAdapter,
+
+        [string]$WorkingDirectory = (Get-Location).Path
+    )
+
+    if (-not (Test-Path -LiteralPath $ConfigPath)) {
+        throw "No saved agent-loop configuration exists at '$ConfigPath'."
+    }
+
+    $savedConfiguration = ConvertFrom-AgentLoopJson `
+        -Json (Get-Content -LiteralPath $ConfigPath -Raw) `
+        -ErrorMessage "The saved agent-loop configuration is invalid."
+    $modelSelection = @{
+        Implementer = [string]$savedConfiguration.Models.Implementer.Id
+        Repairer = [string]$savedConfiguration.Models.Repairer.Id
+        Reviewers = @(
+            [string]$savedConfiguration.Models.Reviewers[0].Id
+            [string]$savedConfiguration.Models.Reviewers[1].Id
+        )
+    }
+
+    return Invoke-AgentLoopSetup `
+        -ConfigPath $ConfigPath `
+        -ModelSelection $modelSelection `
+        -ReasoningBudget ([string]$savedConfiguration.ReasoningBudget) `
+        -CommandAdapter $CommandAdapter `
+        -WorkingDirectory $WorkingDirectory `
+        -ValidateOnly
+}
+
 Export-ModuleMember -Function `
     Get-AgentLoopConfigurationPath, `
     Get-AgentLoopAvailableModels, `
     Invoke-AgentLoopCommand, `
     Invoke-AgentLoopSetup, `
-    New-AgentLoopCommandAdapter
+    New-AgentLoopCommandAdapter, `
+    Test-AgentLoopSetupConfiguration
