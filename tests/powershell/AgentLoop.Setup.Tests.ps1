@@ -36,6 +36,23 @@ BeforeAll {
         }
     }
 
+    function New-AgentLoopDefaultSelection {
+        param(
+            [string]$Implementer = "openrouter/openai/gpt-6-luna",
+            [string]$Repairer = "openrouter/openai/gpt-6-luna",
+            [string[]]$Reviewers = @(
+                "openrouter/anthropic/claude-opus-5.5"
+                "openrouter/x-ai/grok-4.7"
+            )
+        )
+
+        return @{
+            Implementer = $Implementer
+            Repairer = $Repairer
+            Reviewers = $Reviewers
+        }
+    }
+
     function New-AgentLoopSetupResponses {
         $models = @(
         [pscustomobject]@{
@@ -133,14 +150,7 @@ Describe "Invoke-AgentLoopSetup" {
     It "validates the local tools and writes the selected role models without credentials" {
         $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "agent-loop.json"
-        $selection = @{
-            Implementer = "openrouter/openai/gpt-6-luna"
-            Repairer = "openrouter/openai/gpt-6-luna"
-            Reviewers = @(
-                "openrouter/anthropic/claude-opus-5.5"
-                "openrouter/x-ai/grok-4.7"
-            )
-        }
+        $selection = New-AgentLoopDefaultSelection
 
         $result = Invoke-AgentLoopSetup `
             -ConfigPath $configurationPath `
@@ -155,6 +165,7 @@ Describe "Invoke-AgentLoopSetup" {
         $savedConfiguration = Get-Content $configurationPath -Raw | ConvertFrom-Json
         $savedConfiguration.Models.Implementer.Id | Should -Be "openrouter/openai/gpt-6-luna"
         $savedConfiguration.Models.Implementer.Argument | Should -Be "openrouter/openai/gpt-6-luna#xhigh"
+        $savedConfiguration.Models.Implementer.BudgetMode | Should -Be "variant"
         $savedConfiguration.Models.Reviewers.Count | Should -Be 2
         $savedConfiguration.Models.Reviewers[0].Argument | Should -Be "openrouter/anthropic/claude-opus-5.5#high"
         $savedConfiguration.Models.Reviewers[1].Argument | Should -Be "openrouter/x-ai/grok-4.7#xhigh"
@@ -173,14 +184,7 @@ Describe "Invoke-AgentLoopSetup" {
         }
         $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "read-only-agent-loop.json"
-        $selection = @{
-            Implementer = "openrouter/openai/gpt-6-luna"
-            Repairer = "openrouter/openai/gpt-6-luna"
-            Reviewers = @(
-                "openrouter/anthropic/claude-opus-5.5"
-                "openrouter/x-ai/grok-4.7"
-            )
-        }
+        $selection = New-AgentLoopDefaultSelection
 
         {
             Invoke-AgentLoopSetup `
@@ -194,17 +198,33 @@ Describe "Invoke-AgentLoopSetup" {
         (Test-Path $configurationPath) | Should -Be $false
     }
 
-    It "requires the independent reviewers to come from different model families" {
+    It "allows distinct reviewer models from the same family" {
         $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "same-family-agent-loop.json"
-        $selection = @{
-            Implementer = "openrouter/openai/gpt-6-luna"
-            Repairer = "openrouter/openai/gpt-6-luna"
-            Reviewers = @(
-                "openrouter/openai/gpt-6-luna"
-                "openrouter/openai/gpt-5.4"
-            )
-        }
+        $selection = New-AgentLoopDefaultSelection -Reviewers @(
+            "openrouter/openai/gpt-6-luna"
+            "openrouter/openai/gpt-5.4"
+        )
+
+        $result = Invoke-AgentLoopSetup `
+            -ConfigPath $configurationPath `
+            -ModelSelection $selection `
+            -ReasoningBudget "large" `
+            -CommandAdapter $fake.Invoke `
+            -WorkingDirectory $TestDrive
+
+        $result.Models.Reviewers[0].Id | Should -Be "openrouter/openai/gpt-6-luna"
+        $result.Models.Reviewers[1].Id | Should -Be "openrouter/openai/gpt-5.4"
+        (Test-Path $configurationPath) | Should -Be $true
+    }
+
+    It "rejects using one model ID for both independent reviewer roles" {
+        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "duplicate-reviewer-agent-loop.json"
+        $selection = New-AgentLoopDefaultSelection -Reviewers @(
+            "openrouter/anthropic/claude-opus-5.5"
+            "openrouter/anthropic/claude-opus-5.5"
+        )
 
         {
             Invoke-AgentLoopSetup `
@@ -221,14 +241,7 @@ Describe "Invoke-AgentLoopSetup" {
     It "rejects a model ID that is not enabled in the current OpenCode catalog" {
         $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "unavailable-model-agent-loop.json"
-        $selection = @{
-            Implementer = "unavailable/provider-model"
-            Repairer = "openrouter/openai/gpt-6-luna"
-            Reviewers = @(
-                "openrouter/anthropic/claude-opus-5.5"
-                "openrouter/x-ai/grok-4.7"
-            )
-        }
+        $selection = New-AgentLoopDefaultSelection -Implementer "unavailable/provider-model"
 
         {
             Invoke-AgentLoopSetup `
@@ -245,14 +258,7 @@ Describe "Invoke-AgentLoopSetup" {
     It "uses the model ID as its family when the catalog omits that optional field" {
         $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "optional-family-agent-loop.json"
-        $selection = @{
-            Implementer = "openrouter/microsoft/phi-4"
-            Repairer = "openrouter/openai/gpt-6-luna"
-            Reviewers = @(
-                "openrouter/anthropic/claude-opus-5.5"
-                "openrouter/x-ai/grok-4.7"
-            )
-        }
+        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/microsoft/phi-4"
 
         $result = Invoke-AgentLoopSetup `
             -ConfigPath $configurationPath `
@@ -263,5 +269,82 @@ Describe "Invoke-AgentLoopSetup" {
 
         $result.Models.Implementer.Family | Should -Be "openrouter/microsoft/phi-4"
         $result.Models.Implementer.Argument | Should -Be "openrouter/microsoft/phi-4"
+    }
+
+    It "refuses an empty repository without a default branch" {
+        $responses = New-AgentLoopSetupResponses
+        $responses["gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission"] = [pscustomobject]@{
+            ExitCode = 0
+            StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":null,"viewerPermission":"WRITE"}'
+            StdErr = ""
+        }
+        $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $configurationPath = Join-Path $TestDrive "missing-default-branch-agent-loop.json"
+        $selection = New-AgentLoopDefaultSelection
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -ModelSelection $selection `
+                -ReasoningBudget "large" `
+                -CommandAdapter $fake.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*default branch*"
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+
+    It "reports when a selected model uses its provider default for reasoning" {
+        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "provider-default-agent-loop.json"
+        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/microsoft/phi-4"
+
+        $result = Invoke-AgentLoopSetup `
+            -ConfigPath $configurationPath `
+            -ModelSelection $selection `
+            -ReasoningBudget "large" `
+            -CommandAdapter $fake.Invoke `
+            -WorkingDirectory $TestDrive
+
+        $result.Models.Implementer.BudgetMode | Should -Be "provider-default"
+        $result.Models.Implementer.Argument | Should -Be "openrouter/microsoft/phi-4"
+        $savedConfiguration = Get-Content $configurationPath -Raw | ConvertFrom-Json
+        $savedConfiguration.Models.Implementer.BudgetMode | Should -Be "provider-default"
+    }
+
+    It "rejects a reasoning budget that no selected model variant can satisfy" {
+        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "unsupported-budget-agent-loop.json"
+        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/openai/gpt-5.4"
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -ModelSelection $selection `
+                -ReasoningBudget "small" `
+                -CommandAdapter $fake.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*reasoning variant compatible*"
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+}
+
+Describe "Agent-loop OpenCode permissions" {
+    It "denies arbitrary tools and external paths and keeps reviewers read-only" {
+        $agentDirectory = Join-Path $PSScriptRoot "../../.opencode/agents"
+        $workerProfile = Get-Content (Join-Path $agentDirectory "agent-loop-worker.md") -Raw
+        $reviewerProfile = Get-Content (Join-Path $agentDirectory "agent-loop-reviewer.md") -Raw
+
+        $workerProfile | Should -Match 'action: "\*"\s+resource: "\*"\s+effect: deny'
+        $workerProfile | Should -Match 'action: external_directory\s+resource: "\*"\s+effect: deny'
+        $workerProfile | Should -Match 'resource: "\*\.env\*"\s+effect: deny'
+        $workerProfile | Should -Match 'resource: "\*secrets/\*"\s+effect: deny'
+        $workerProfile | Should -Match 'resource: "\*\.env\.example"\s+effect: allow'
+        $reviewerProfile | Should -Match 'action: "\*"\s+resource: "\*"\s+effect: deny'
+        $reviewerProfile | Should -Match 'action: external_directory\s+resource: "\*"\s+effect: deny'
+        $reviewerProfile | Should -Match 'resource: "\*\.env\.example"\s+effect: allow'
+        $reviewerProfile | Should -Not -Match 'action: edit'
+        $reviewerProfile | Should -Not -Match 'action: shell'
     }
 }

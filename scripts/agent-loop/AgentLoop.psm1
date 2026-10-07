@@ -190,6 +190,7 @@ function Resolve-AgentLoopModel {
     $targetIndex = [array]::IndexOf($effortOrder, $budgetTarget)
     $supportedEfforts = @($model.Variants | Where-Object { $effortOrder -contains $_ })
     $selectedVariant = $null
+    $budgetMode = "provider-default"
 
     if ($supportedEfforts.Count -gt 0) {
         $compatibleEfforts = @(
@@ -198,15 +199,25 @@ function Resolve-AgentLoopModel {
                 Sort-Object { [array]::IndexOf($effortOrder, $_) }
         )
 
-        if ($compatibleEfforts.Count -gt 0) {
-            $selectedVariant = $compatibleEfforts[-1]
+        if ($compatibleEfforts.Count -eq 0) {
+            throw "Model '$ModelId' has no reasoning variant compatible with the '$ReasoningBudget' budget."
         }
+
+        $selectedVariant = $compatibleEfforts[-1]
+        $budgetMode = "variant"
     }
-    elseif ($model.Variants -contains "thinking" -and $ReasoningBudget -ne "small") {
-        $selectedVariant = "thinking"
-    }
-    elseif ($model.Variants -contains "none") {
-        $selectedVariant = "none"
+    elseif ($model.Variants -contains "thinking" -or $model.Variants -contains "none") {
+        if ($ReasoningBudget -eq "small" -and $model.Variants -contains "none") {
+            $selectedVariant = "none"
+            $budgetMode = "variant"
+        }
+        elseif ($ReasoningBudget -ne "small" -and $model.Variants -contains "thinking") {
+            $selectedVariant = "thinking"
+            $budgetMode = "variant"
+        }
+        else {
+            throw "Model '$ModelId' has no reasoning variant compatible with the '$ReasoningBudget' budget."
+        }
     }
 
     $modelArgument = $model.Id
@@ -219,6 +230,7 @@ function Resolve-AgentLoopModel {
         Name = $model.Name
         Family = $model.Family
         Variant = $selectedVariant
+        BudgetMode = $budgetMode
         Argument = $modelArgument
     }
 }
@@ -369,6 +381,23 @@ function Invoke-AgentLoopSetup {
         throw "GitHub CLI returned invalid repository information. $($_.Exception.Message)"
     }
 
+    $repositoryName = [string]$repository.nameWithOwner
+    $defaultBranch = ""
+    $defaultBranchReference = $repository.PSObject.Properties["defaultBranchRef"]
+    if ($null -ne $defaultBranchReference -and $null -ne $defaultBranchReference.Value) {
+        $defaultBranchName = $defaultBranchReference.Value.PSObject.Properties["name"]
+        if ($null -ne $defaultBranchName) {
+            $defaultBranch = [string]$defaultBranchName.Value
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($repositoryName)) {
+        throw "GitHub CLI did not identify the current repository."
+    }
+    if ([string]::IsNullOrWhiteSpace($defaultBranch)) {
+        throw "The GitHub repository has no default branch."
+    }
+
     if ($repository.viewerPermission -notin @("WRITE", "MAINTAIN", "ADMIN")) {
         throw "GitHub access must include write permission to create branches and pull requests."
     }
@@ -392,9 +421,8 @@ function Invoke-AgentLoopSetup {
         Resolve-AgentLoopModel -AvailableModels $availableModels -ModelId $ModelSelection.Reviewers[1] -Role "second reviewer" -ReasoningBudget $ReasoningBudget
     )
 
-    if ($reviewerModels[0].Id -eq $reviewerModels[1].Id -or
-        $reviewerModels[0].Family -eq $reviewerModels[1].Family) {
-        throw "Reviewer models must be different models from different model families."
+    if ($reviewerModels[0].Id -eq $reviewerModels[1].Id) {
+        throw "Reviewer roles must use different model IDs."
     }
 
     $resolvedModels = [pscustomobject]@{
@@ -405,8 +433,8 @@ function Invoke-AgentLoopSetup {
 
     $configuration = [pscustomobject]@{
         SchemaVersion = 1
-        Repository = [string]$repository.nameWithOwner
-        DefaultBranch = [string]$repository.defaultBranchRef.name
+        Repository = $repositoryName
+        DefaultBranch = $defaultBranch
         ReasoningBudget = $ReasoningBudget
         Models = $resolvedModels
     }
@@ -432,8 +460,8 @@ function Invoke-AgentLoopSetup {
 
     return [pscustomobject]@{
         ConfigurationPath = $ConfigPath
-        Repository = [string]$repository.nameWithOwner
-        DefaultBranch = [string]$repository.defaultBranchRef.name
+        Repository = $repositoryName
+        DefaultBranch = $defaultBranch
         ReasoningBudget = $ReasoningBudget
         Models = $resolvedModels
     }

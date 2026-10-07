@@ -33,6 +33,22 @@ Write-Host "Agent loop setup is ready for $($setupResult.Repository)."
 Write-Host "Default branch: $($setupResult.DefaultBranch)"
 Write-Host "Configuration: $($setupResult.ConfigurationPath)"
 Write-Host "Reasoning budget: $($setupResult.ReasoningBudget)"
-Write-Host "Implementation model: $($setupResult.Models.Implementer.Argument)"
-Write-Host "Repair model: $($setupResult.Models.Repairer.Argument)"
-Write-Host "Reviewer models: $($setupResult.Models.Reviewers[0].Argument), $($setupResult.Models.Reviewers[1].Argument)"
+
+foreach ($roleName in @("Implementer", "Repairer")) {
+    $roleModel = $setupResult.Models.$roleName
+    if ($roleModel.BudgetMode -eq "provider-default") {
+        Write-Host "$roleName model: $($roleModel.Argument) (provider default; no reasoning variant exposed)"
+    }
+    else {
+        Write-Host "$roleName model: $($roleModel.Argument)"
+    }
+}
+
+foreach ($reviewerModel in $setupResult.Models.Reviewers) {
+    if ($reviewerModel.BudgetMode -eq "provider-default") {
+        Write-Host "Reviewer model: $($reviewerModel.Argument) (provider default; no reasoning variant exposed)"
+    }
+    else {
+        Write-Host "Reviewer model: $($reviewerModel.Argument)"
+    }
+}
