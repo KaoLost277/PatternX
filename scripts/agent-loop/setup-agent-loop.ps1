@@ -20,20 +20,12 @@ function Write-AgentLoopModelSummary {
     )
 
     $summary = "$RoleName model: $($Model.Argument)"
-    if ($Model.BudgetMode -eq "provider-default") {
-        $summary = "$summary (provider default; no reasoning variant exposed)"
-    }
-
     Write-Host $summary
 }
 
 function Ensure-AgentLoopPester {
     $requiredVersion = [version]"5.7.1"
-    $availablePester = @(
-        Get-Module -ListAvailable -Name Pester |
-            Where-Object { $_.Version -eq $requiredVersion } |
-            Sort-Object Version -Descending
-    )
+    $availablePester = Find-AgentLoopPesterModule -Version $requiredVersion
 
     if ($availablePester.Count -eq 0) {
         Write-Host "Installing Pester $requiredVersion for the current user."
@@ -45,11 +37,7 @@ function Ensure-AgentLoopPester {
             -Force `
             -SkipPublisherCheck
 
-        $availablePester = @(
-            Get-Module -ListAvailable -Name Pester |
-                Where-Object { $_.Version -eq $requiredVersion } |
-                Sort-Object Version -Descending
-        )
+        $availablePester = Find-AgentLoopPesterModule -Version $requiredVersion
     }
 
     if ($availablePester.Count -eq 0) {
@@ -57,6 +45,17 @@ function Ensure-AgentLoopPester {
     }
 
     Import-Module Pester -RequiredVersion $requiredVersion -Force
+}
+
+function Find-AgentLoopPesterModule {
+    param(
+        [Parameter(Mandatory = $true)]
+        [version]$Version
+    )
+
+    return Get-Module -ListAvailable -Name Pester |
+        Where-Object { $_.Version -eq $Version } |
+        Select-Object -First 1
 }
 
 Import-Module $modulePath -Force
@@ -101,12 +100,7 @@ if ($reuseExistingConfiguration) {
 Write-Host "Default branch: $($setupResult.DefaultBranch)"
 Write-Host "Configuration: $($setupResult.ConfigurationPath)"
 Write-Host "Reasoning budget: $($setupResult.ReasoningBudget)"
-if ($setupResult.GitHubScopeStatus -eq "verified") {
-    Write-Host "GitHub repository write scope: verified"
-}
-else {
-    Write-Warning "GitHub reports write access but hides token scopes. The first batch must verify write access by claiming its issue before launching OpenCode."
-}
+Write-Host "GitHub repository write scope: verified"
 
 foreach ($roleName in @("Implementer", "Repairer")) {
     Write-AgentLoopModelSummary -RoleName $roleName -Model $setupResult.Models.$roleName

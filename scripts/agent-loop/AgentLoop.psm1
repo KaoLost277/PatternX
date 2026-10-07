@@ -236,6 +236,9 @@ function Resolve-AgentLoopModel {
             throw "Model '$ModelId' has no reasoning variant compatible with the '$ReasoningBudget' budget."
         }
     }
+    else {
+        throw "Model '$ModelId' does not expose reasoning variants for the '$ReasoningBudget' budget."
+    }
 
     $modelArgument = $model.Id
     if (-not [string]::IsNullOrWhiteSpace($selectedVariant)) {
@@ -431,14 +434,16 @@ function Invoke-AgentLoopSetup {
     }
 
     $githubScopeStatus = "not-exposed"
-    if ($tokenScopes.Count -gt 0 -and $tokenScopes -notcontains "none") {
-        $hasRepositoryScope = $tokenScopes -contains "repo"
-        $hasPublicRepositoryScope = -not $isPrivateProperty.Value -and $tokenScopes -contains "public_repo"
-        if (-not $hasRepositoryScope -and -not $hasPublicRepositoryScope) {
-            throw "The GitHub token is missing the repository write scope required by the agent loop."
-        }
-        $githubScopeStatus = "verified"
+    if ($tokenScopes.Count -eq 0 -or $tokenScopes -contains "none") {
+        throw "GitHub CLI did not expose token scopes. Authenticate with a token that exposes repository write access before running setup."
     }
+
+    $hasRepositoryScope = $tokenScopes -contains "repo"
+    $hasPublicRepositoryScope = -not $isPrivateProperty.Value -and $tokenScopes -contains "public_repo"
+    if (-not $hasRepositoryScope -and -not $hasPublicRepositoryScope) {
+        throw "The GitHub token is missing the repository write scope required by the agent loop."
+    }
+    $githubScopeStatus = "verified"
 
     if ($null -eq $ModelSelection -or [string]::IsNullOrWhiteSpace($ReasoningBudget)) {
         $interactiveSelection = Get-AgentLoopInteractiveModelSelection -AvailableModels $availableModels

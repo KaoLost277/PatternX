@@ -55,62 +55,132 @@ BeforeAll {
 
     function New-AgentLoopSetupResponses {
         $models = @(
-        [pscustomobject]@{
-            providerID = "openrouter"
-            modelID = "openai/gpt-6-luna"
-            family = "gpt"
-            name = "GPT-6 Luna"
-            status = "active"
-            enabled = $true
-            capabilities = [pscustomobject]@{ tools = $true }
-            variants = @(
-                [pscustomobject]@{ id = "low" }
-                [pscustomobject]@{ id = "medium" }
-                [pscustomobject]@{ id = "high" }
-                [pscustomobject]@{ id = "xhigh" }
-                [pscustomobject]@{ id = "max" }
-            )
-        }
-        [pscustomobject]@{
-            providerID = "openrouter"
-            modelID = "openai/gpt-5.4"
-            family = "gpt"
-            name = "GPT-5.4"
-            status = "active"
-            enabled = $true
-            capabilities = [pscustomobject]@{ tools = $true }
-            variants = @([pscustomobject]@{ id = "high" })
-        }
-        [pscustomobject]@{
-            providerID = "openrouter"
-            modelID = "anthropic/claude-opus-5.5"
-            family = "claude-opus"
-            name = "Claude Opus 5.5"
-            status = "active"
-            enabled = $true
-            capabilities = [pscustomobject]@{ tools = $true }
-            variants = @([pscustomobject]@{ id = "high" }, [pscustomobject]@{ id = "max" })
-        }
-        [pscustomobject]@{
-            providerID = "openrouter"
-            modelID = "x-ai/grok-4.7"
-            family = "grok"
-            name = "Grok 4.7"
-            status = "active"
-            enabled = $true
-            capabilities = [pscustomobject]@{ tools = $true }
-            variants = @([pscustomobject]@{ id = "high" }, [pscustomobject]@{ id = "xhigh" })
-        }
-        [pscustomobject]@{
-            providerID = "openrouter"
-            modelID = "microsoft/phi-4"
-            name = "Phi 4"
-            status = "active"
-            enabled = $true
-            capabilities = [pscustomobject]@{ tools = $true }
-            variants = @()
-        }
+            [pscustomobject]@{
+                providerID = "openrouter"
+                modelID = "openai/gpt-6-luna"
+                family = "gpt"
+                name = "GPT-6 Luna"
+                status = "active"
+                enabled = $true
+                capabilities = [pscustomobject]@{
+                    tools = $true
+                }
+                variants = @(
+                    [pscustomobject]@{
+                        id = "low"
+                    }
+                    [pscustomobject]@{
+                        id = "medium"
+                    }
+                    [pscustomobject]@{
+                        id = "high"
+                    }
+                    [pscustomobject]@{
+                        id = "xhigh"
+                    }
+                    [pscustomobject]@{
+                        id = "max"
+                    }
+                )
+            }
+            [pscustomobject]@{
+                providerID = "openrouter"
+                modelID = "openai/gpt-5.4"
+                family = "gpt"
+                name = "GPT-5.4"
+                status = "active"
+                enabled = $true
+                capabilities = [pscustomobject]@{
+                    tools = $true
+                }
+                variants = @(
+                    [pscustomobject]@{
+                        id = "high"
+                    }
+                )
+            }
+            [pscustomobject]@{
+                providerID = "openrouter"
+                modelID = "anthropic/claude-opus-5.5"
+                family = "claude-opus"
+                name = "Claude Opus 5.5"
+                status = "active"
+                enabled = $true
+                capabilities = [pscustomobject]@{
+                    tools = $true
+                }
+                variants = @(
+                    [pscustomobject]@{
+                        id = "high"
+                    }
+                    [pscustomobject]@{
+                        id = "max"
+                    }
+                )
+            }
+            [pscustomobject]@{
+                providerID = "openrouter"
+                modelID = "x-ai/grok-4.7"
+                family = "grok"
+                name = "Grok 4.7"
+                status = "active"
+                enabled = $true
+                capabilities = [pscustomobject]@{
+                    tools = $true
+                }
+                variants = @(
+                    [pscustomobject]@{
+                        id = "high"
+                    }
+                    [pscustomobject]@{
+                        id = "xhigh"
+                    }
+                )
+            }
+            [pscustomobject]@{
+                providerID = "openrouter"
+                modelID = "microsoft/phi-4"
+                name = "Phi 4"
+                status = "active"
+                enabled = $true
+                capabilities = [pscustomobject]@{
+                    tools = $true
+                }
+                variants = @(
+                    [pscustomobject]@{
+                        id = "high"
+                    }
+                )
+            }
+            [pscustomobject]@{
+                providerID = "openrouter"
+                modelID = "microsoft/phi-4-mini"
+                family = "phi"
+                name = "Phi 4 Mini"
+                status = "active"
+                enabled = $true
+                capabilities = [pscustomobject]@{
+                    tools = $true
+                }
+                variants = @()
+            }
         )
+
+        $modelCatalog = [pscustomobject]@{
+            location = [pscustomobject]@{
+                directory = "C:\repo"
+            }
+            data = $models
+        }
+
+        $repository = [pscustomobject]@{
+            nameWithOwner = "KaoLost277/PatternX"
+            defaultBranchRef = [pscustomobject]@{
+                name = "main"
+            }
+            viewerPermission = "WRITE"
+            isPrivate = $false
+        }
 
         return @{
             "opencode --version" = [pscustomobject]@{
@@ -120,7 +190,7 @@ BeforeAll {
             }
             "opencode api get /api/model" = [pscustomobject]@{
                 ExitCode = 0
-                StdOut = (@{ location = @{ directory = "C:\repo" }; data = $models } | ConvertTo-Json -Depth 8 -Compress)
+                StdOut = ConvertTo-Json -InputObject $modelCatalog -Depth 8 -Compress
                 StdErr = ""
             }
             "gh auth status" = [pscustomobject]@{
@@ -130,7 +200,7 @@ BeforeAll {
             }
             "gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission,isPrivate" = [pscustomobject]@{
                 ExitCode = 0
-                StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":{"name":"main"},"viewerPermission":"WRITE","isPrivate":false}'
+                StdOut = ConvertTo-Json -InputObject $repository -Depth 4 -Compress
                 StdErr = ""
             }
         }
@@ -171,7 +241,7 @@ Describe "Invoke-AgentLoopSetup" {
     }
 
     It "validates the local tools and writes the selected role models without credentials" {
-        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "agent-loop.json"
         $selection = New-AgentLoopDefaultSelection
 
@@ -179,7 +249,7 @@ Describe "Invoke-AgentLoopSetup" {
             -ConfigPath $configurationPath `
             -ModelSelection $selection `
             -ReasoningBudget "large" `
-            -CommandAdapter $fake.Invoke `
+            -CommandAdapter $fakeCommandAdapter.Invoke `
             -WorkingDirectory $TestDrive
 
         $result.Repository | Should -Be "KaoLost277/PatternX"
@@ -194,8 +264,8 @@ Describe "Invoke-AgentLoopSetup" {
         $savedConfiguration.Models.Reviewers[0].Argument | Should -Be "openrouter/anthropic/claude-opus-5.5#high"
         $savedConfiguration.Models.Reviewers[1].Argument | Should -Be "openrouter/x-ai/grok-4.7#xhigh"
         $savedConfiguration.ReasoningBudget | Should -Be "large"
-        $fake.Calls.Count | Should -Be 4
-        ($fake.Calls | Where-Object { $_.Executable -eq "gh" }).Count | Should -Be 2
+        $fakeCommandAdapter.Calls.Count | Should -Be 4
+        ($fakeCommandAdapter.Calls | Where-Object { $_.Executable -eq "gh" }).Count | Should -Be 2
         ((Get-Content $configurationPath -Raw) -match "token|secret|api.?key") | Should -Be $false
     }
 
@@ -206,7 +276,7 @@ Describe "Invoke-AgentLoopSetup" {
             StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":{"name":"main"},"viewerPermission":"READ","isPrivate":false}'
             StdErr = ""
         }
-        $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "read-only-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection
 
@@ -215,7 +285,7 @@ Describe "Invoke-AgentLoopSetup" {
                 -ConfigPath $configurationPath `
                 -ModelSelection $selection `
                 -ReasoningBudget "large" `
-                -CommandAdapter $fake.Invoke `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
 
@@ -229,7 +299,7 @@ Describe "Invoke-AgentLoopSetup" {
             StdOut = "Logged in to github.com`n  - Token scopes: 'read:org', 'workflow'"
             StdErr = ""
         }
-        $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "missing-write-scope-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection
 
@@ -238,37 +308,38 @@ Describe "Invoke-AgentLoopSetup" {
                 -ConfigPath $configurationPath `
                 -ModelSelection $selection `
                 -ReasoningBudget "large" `
-                -CommandAdapter $fake.Invoke `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*repo*scope*"
 
         (Test-Path $configurationPath) | Should -Be $false
     }
 
-    It "records when GitHub hides token write scopes for the run-time issue-claim check" {
+    It "refuses GitHub credentials when token write scopes cannot be verified" {
         $responses = New-AgentLoopSetupResponses
         $responses["gh auth status"] = [pscustomobject]@{
             ExitCode = 0
             StdOut = "Logged in to github.com"
             StdErr = ""
         }
-        $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "unknown-write-scope-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection
 
-        $result = Invoke-AgentLoopSetup `
-            -ConfigPath $configurationPath `
-            -ModelSelection $selection `
-            -ReasoningBudget "large" `
-            -CommandAdapter $fake.Invoke `
-            -WorkingDirectory $TestDrive
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -ModelSelection $selection `
+                -ReasoningBudget "large" `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*token scopes*"
 
-        $result.GitHubScopeStatus | Should -Be "not-exposed"
-        (Test-Path $configurationPath) | Should -Be $true
+        (Test-Path $configurationPath) | Should -Be $false
     }
 
     It "allows distinct reviewer models from the same family" {
-        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "same-family-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection -Reviewers @(
             "openrouter/openai/gpt-6-luna"
@@ -279,7 +350,7 @@ Describe "Invoke-AgentLoopSetup" {
             -ConfigPath $configurationPath `
             -ModelSelection $selection `
             -ReasoningBudget "large" `
-            -CommandAdapter $fake.Invoke `
+            -CommandAdapter $fakeCommandAdapter.Invoke `
             -WorkingDirectory $TestDrive
 
         $result.Models.Reviewers[0].Id | Should -Be "openrouter/openai/gpt-6-luna"
@@ -288,7 +359,7 @@ Describe "Invoke-AgentLoopSetup" {
     }
 
     It "rejects using one model ID for both independent reviewer roles" {
-        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "duplicate-reviewer-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection -Reviewers @(
             "openrouter/anthropic/claude-opus-5.5"
@@ -300,7 +371,7 @@ Describe "Invoke-AgentLoopSetup" {
                 -ConfigPath $configurationPath `
                 -ModelSelection $selection `
                 -ReasoningBudget "large" `
-                -CommandAdapter $fake.Invoke `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
 
@@ -308,7 +379,7 @@ Describe "Invoke-AgentLoopSetup" {
     }
 
     It "rejects a model ID that is not enabled in the current OpenCode catalog" {
-        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "unavailable-model-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection -Implementer "unavailable/provider-model"
 
@@ -317,7 +388,7 @@ Describe "Invoke-AgentLoopSetup" {
                 -ConfigPath $configurationPath `
                 -ModelSelection $selection `
                 -ReasoningBudget "large" `
-                -CommandAdapter $fake.Invoke `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
 
@@ -325,7 +396,7 @@ Describe "Invoke-AgentLoopSetup" {
     }
 
     It "uses the model ID as its family when the catalog omits that optional field" {
-        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "optional-family-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/microsoft/phi-4"
 
@@ -333,11 +404,11 @@ Describe "Invoke-AgentLoopSetup" {
             -ConfigPath $configurationPath `
             -ModelSelection $selection `
             -ReasoningBudget "large" `
-            -CommandAdapter $fake.Invoke `
+            -CommandAdapter $fakeCommandAdapter.Invoke `
             -WorkingDirectory $TestDrive
 
         $result.Models.Implementer.Family | Should -Be "openrouter/microsoft/phi-4"
-        $result.Models.Implementer.Argument | Should -Be "openrouter/microsoft/phi-4"
+        $result.Models.Implementer.Argument | Should -Be "openrouter/microsoft/phi-4#high"
     }
 
     It "refuses an empty repository without a default branch" {
@@ -347,7 +418,7 @@ Describe "Invoke-AgentLoopSetup" {
             StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":null,"viewerPermission":"WRITE","isPrivate":false}'
             StdErr = ""
         }
-        $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "missing-default-branch-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection
 
@@ -356,33 +427,32 @@ Describe "Invoke-AgentLoopSetup" {
                 -ConfigPath $configurationPath `
                 -ModelSelection $selection `
                 -ReasoningBudget "large" `
-                -CommandAdapter $fake.Invoke `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*default branch*"
 
         (Test-Path $configurationPath) | Should -Be $false
     }
 
-    It "reports when a selected model uses its provider default for reasoning" {
-        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+    It "rejects a selected model with no reasoning variants" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "provider-default-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/microsoft/phi-4"
+        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/microsoft/phi-4-mini"
 
-        $result = Invoke-AgentLoopSetup `
-            -ConfigPath $configurationPath `
-            -ModelSelection $selection `
-            -ReasoningBudget "large" `
-            -CommandAdapter $fake.Invoke `
-            -WorkingDirectory $TestDrive
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -ModelSelection $selection `
+                -ReasoningBudget "large" `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*reasoning variant*"
 
-        $result.Models.Implementer.BudgetMode | Should -Be "provider-default"
-        $result.Models.Implementer.Argument | Should -Be "openrouter/microsoft/phi-4"
-        $savedConfiguration = Get-Content $configurationPath -Raw | ConvertFrom-Json
-        $savedConfiguration.Models.Implementer.BudgetMode | Should -Be "provider-default"
+        (Test-Path $configurationPath) | Should -Be $false
     }
 
     It "rejects a reasoning budget that no selected model variant can satisfy" {
-        $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "unsupported-budget-agent-loop.json"
         $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/openai/gpt-5.4"
 
@@ -391,7 +461,7 @@ Describe "Invoke-AgentLoopSetup" {
                 -ConfigPath $configurationPath `
                 -ModelSelection $selection `
                 -ReasoningBudget "small" `
-                -CommandAdapter $fake.Invoke `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*reasoning variant compatible*"
 
