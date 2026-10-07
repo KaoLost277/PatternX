@@ -220,19 +220,8 @@ def create_application(
         job = find_job_or_raise(job_id)
         try:
             return job.pattern_rows_page(pattern_index, page)
-        except AnalysisNotSucceededError as error:
-            raise HTTPException(
-                status_code=409,
-                detail="Pattern rows are available only after the analysis succeeds.",
-            ) from error
-        except PatternIndexNotFoundError as error:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"There is no Completeness Pattern at index {pattern_index} "
-                    f"for analysis job {job_id!r}."
-                ),
-            ) from error
+        except (AnalysisNotSucceededError, PatternIndexNotFoundError) as error:
+            raise pattern_rows_request_error(error, job_id, pattern_index) from error
 
     @application.get(
         "/api/analysis-jobs/{job_id}/patterns/{pattern_index}/exports/rows.csv"
@@ -241,19 +230,8 @@ def create_application(
         job = find_job_or_raise(job_id)
         try:
             columns, matching_rows = job.open_pattern_rows_export(pattern_index)
-        except AnalysisNotSucceededError as error:
-            raise HTTPException(
-                status_code=409,
-                detail="Pattern rows are available only after the analysis succeeds.",
-            ) from error
-        except PatternIndexNotFoundError as error:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"There is no Completeness Pattern at index {pattern_index} "
-                    f"for analysis job {job_id!r}."
-                ),
-            ) from error
+        except (AnalysisNotSucceededError, PatternIndexNotFoundError) as error:
+            raise pattern_rows_request_error(error, job_id, pattern_index) from error
 
         export_name = f"pattern_rows_{pattern_index + 1}.csv"
         return StreamingResponse(
@@ -278,6 +256,25 @@ def create_application(
             raise unknown_job_error(job_id)
 
         return analysis_job_status_response(job)
+
+    def pattern_rows_request_error(
+        error: AnalysisNotSucceededError | PatternIndexNotFoundError,
+        job_id: str,
+        pattern_index: int,
+    ) -> HTTPException:
+        if isinstance(error, AnalysisNotSucceededError):
+            return HTTPException(
+                status_code=409,
+                detail="Pattern rows are available only after the analysis succeeds.",
+            )
+
+        return HTTPException(
+            status_code=404,
+            detail=(
+                f"There is no Completeness Pattern at index {pattern_index} "
+                f"for analysis job {job_id!r}."
+            ),
+        )
 
     def find_job_or_raise(job_id: str) -> AnalysisJob:
         job = job_store.find(job_id)

@@ -30,6 +30,7 @@ from app.completeness import (
 from app.patterns import (
     AnalysisCancelledError,
     AnalysisInputs,
+    CompletenessPattern,
     PRESENT_STATUS,
     PatternSummary,
     compute_pattern_summary,
@@ -203,6 +204,29 @@ class AnalysisJob:
         with self._lock:
             clean_up_job(self.job_directory)
 
+    def _pattern_rows_query(self, pattern: CompletenessPattern) -> tuple[str, list[int]]:
+        source_columns = [
+            sqlite_column_name(column_index)
+            for column_index in range(len(self.analysis_inputs.column_names))
+        ]
+        status_conditions = []
+        for column_name in self.analysis_inputs.analysis_columns:
+            column_index = self.analysis_inputs.column_names.index(column_name)
+            status_function = presence_function_name(column_index)
+            status_conditions.append(
+                f"{status_function}({sqlite_column_name(column_index)}) = ?"
+            )
+
+        query = (
+            f'SELECT {", ".join(source_columns)} FROM "input_rows" '
+            f'WHERE {" AND ".join(status_conditions)} '
+            "ORDER BY rowid ASC"
+        )
+        expected_status_values = [
+            int(status == PRESENT_STATUS) for status in pattern.statuses
+        ]
+        return query, expected_status_values
+
     def pattern_rows_page(self, pattern_index: int, page: int) -> dict[str, object]:
         """Read one source-ordered page matching a completed summary pattern."""
         with self._lock:
@@ -225,28 +249,9 @@ class AnalysisJob:
                         self.analysis_inputs.column_names,
                         self.analysis_inputs.missing_markers_by_column,
                     )
-                    source_columns = [
-                        sqlite_column_name(column_index)
-                        for column_index in range(len(self.analysis_inputs.column_names))
-                    ]
-                    status_conditions = []
-                    for column_name in self.result.pattern_summary.analysis_columns:
-                        column_index = self.analysis_inputs.column_names.index(column_name)
-                        status_function = presence_function_name(column_index)
-                        status_conditions.append(
-                            f"{status_function}({sqlite_column_name(column_index)}) = ?"
-                        )
-
-                    query = (
-                        f'SELECT {", ".join(source_columns)} FROM "input_rows" '
-                        f'WHERE {" AND ".join(status_conditions)} '
-                        f'ORDER BY rowid ASC LIMIT ? OFFSET ?'
-                    )
-                    expected_status_values = [
-                        int(status == PRESENT_STATUS) for status in pattern.statuses
-                    ]
+                    query, expected_status_values = self._pattern_rows_query(pattern)
                     rows = connection.execute(
-                        query,
+                        f"{query} LIMIT ? OFFSET ?",
                         [*expected_status_values, PATTERN_ROWS_PAGE_SIZE, offset],
                     ).fetchall()
                 finally:
@@ -284,26 +289,7 @@ class AnalysisJob:
                 self.analysis_inputs.missing_markers_by_column,
             )
 
-            source_columns = [
-                sqlite_column_name(column_index)
-                for column_index in range(len(self.analysis_inputs.column_names))
-            ]
-            status_conditions = []
-            for column_name in self.result.pattern_summary.analysis_columns:
-                column_index = self.analysis_inputs.column_names.index(column_name)
-                status_function = presence_function_name(column_index)
-                status_conditions.append(
-                    f"{status_function}({sqlite_column_name(column_index)}) = ?"
-                )
-
-            query = (
-                f'SELECT {", ".join(source_columns)} FROM "input_rows" '
-                f'WHERE {" AND ".join(status_conditions)} '
-                "ORDER BY rowid ASC"
-            )
-            expected_status_values = [
-                int(status == PRESENT_STATUS) for status in pattern.statuses
-            ]
+            query, expected_status_values = self._pattern_rows_query(pattern)
             cursor = connection.execute(query, expected_status_values)
             rows = PatternRowsExportRows(cursor, connection, self._lock)
             return list(self.analysis_inputs.column_names), rows
