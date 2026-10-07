@@ -14,21 +14,19 @@ are.
 """
 
 import json
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
-
 from app.completeness import (
-    CSV_READ_OPTIONS,
     NoInputRowsError,
-    build_present_expression,
-    build_working_columns_option,
-    collect_marker_parameters,
+    presence_function_name,
     reject_markers_for_unknown_columns,
-    working_column_name,
+    register_presence_functions,
+    sqlite_column_name,
 )
+from app.sqlite_storage import ANALYSIS_TABLE_NAME
 
 PRESENT_STATUS = "present"
 MISSING_STATUS = "missing"
@@ -64,7 +62,7 @@ class AnalysisInputs:
     """Everything one analysis needs to compute its summaries."""
 
     analysis_csv_path: Path
-    duckdb_directory: Path
+    database_path: Path
     column_names: list[str]
     missing_markers_by_column: dict[str, list[str]]
     analysis_columns: list[str]
@@ -194,7 +192,7 @@ def parse_analysis_columns(raw_analysis_columns: str | None) -> list[str]:
 
 
 def compute_pattern_summary(
-    connection: duckdb.DuckDBPyConnection,
+    connection: sqlite3.Connection,
     analysis_inputs: AnalysisInputs,
     progress_reporter: Callable[[int, int], None] | None = None,
     cancellation_check: Callable[[], bool] | None = None,
@@ -205,7 +203,6 @@ def compute_pattern_summary(
     The caller owns the connection, so it can also interrupt the running queries
     when the user cancels the analysis.
     """
-    raw_file_path = analysis_inputs.analysis_csv_path
     column_names = analysis_inputs.column_names
     reject_markers_for_unknown_columns(
         column_names,
@@ -219,7 +216,7 @@ def compute_pattern_summary(
     )
 
     raise_if_cancelled(cancellation_check)
-    input_rows = count_input_rows(connection, raw_file_path, column_names)
+    input_rows = count_input_rows(connection)
     raise_if_cancelled(cancellation_check)
     pattern_tally = tally_pattern_counts(
         connection,
@@ -281,18 +278,10 @@ def resolve_analysis_columns(
 
 
 def count_input_rows(
-    connection: duckdb.DuckDBPyConnection,
-    raw_file_path: Path,
-    column_names: list[str],
+    connection: sqlite3.Connection,
 ) -> int:
     """Count the Input Rows of the file before grouping them."""
-    query = (
-        "SELECT count(*) AS input_rows"
-        + f" FROM read_csv(?, {CSV_READ_OPTIONS}, columns = "
-        + build_working_columns_option(column_names)
-        + ")"
-    )
-    cursor = connection.execute(query, [str(raw_file_path)])
+    cursor = connection.execute(f'SELECT count(*) FROM "{ANALYSIS_TABLE_NAME}"')
     input_rows = int(cursor.fetchone()[0])
     if input_rows == 0:
         raise NoInputRowsError("The uploaded file contains a header row but no Input Rows.")
@@ -301,7 +290,7 @@ def count_input_rows(
 
 
 def tally_pattern_counts(
-    connection: duckdb.DuckDBPyConnection,
+    connection: sqlite3.Connection,
     analysis_inputs: AnalysisInputs,
     column_names: list[str],
     analysis_columns: list[str],
@@ -312,20 +301,17 @@ def tally_pattern_counts(
     rows_per_batch: int,
 ) -> PatternTally:
     """Tally every Input Row into its Completeness Pattern, one batch at a time."""
+    register_presence_functions(
+        connection,
+        column_names,
+        analysis_inputs.missing_markers_by_column,
+    )
     query = build_pattern_streaming_query(
         column_names,
         analysis_columns,
         identifier_column,
-        analysis_inputs.missing_markers_by_column,
     )
-    # Marker values bind first: their placeholders come before the file path
-    # placeholder in the query text.
-    query_parameters = collect_marker_parameters(
-        analysis_columns,
-        analysis_inputs.missing_markers_by_column,
-    )
-    query_parameters.append(str(analysis_inputs.analysis_csv_path))
-    cursor = connection.execute(query, query_parameters)
+    cursor = connection.execute(query)
 
     pattern_tally = PatternTally(
         analysis_column_count=len(analysis_columns),
@@ -394,35 +380,30 @@ def build_pattern_streaming_query(
     column_names: list[str],
     analysis_columns: list[str],
     identifier_column: str | None,
-    missing_markers_by_column: dict[str, list[str]],
 ) -> str:
     """Build the per-row query behind the tally and the previews.
 
     One status expression per analyzed column comes first, then the cell text of
-    those columns for the previews, then the Identifier Column text. The query
-    reads the file under generated working column names so that hostile header
-    values never take part in building SQL text.
+    those columns for the previews, then the Identifier Column text. Generated
+    column names keep hostile headers out of SQL text.
     """
     select_expressions = []
     for status_index, column_name in enumerate(analysis_columns):
-        working_name = working_column_name(column_names.index(column_name))
-        markers = missing_markers_by_column.get(column_name, [])
+        column_index = column_names.index(column_name)
+        column_sql_name = sqlite_column_name(column_index)
+        present_function = presence_function_name(column_index)
         select_expressions.append(
-            "CASE WHEN "
-            + build_present_expression(working_name, len(markers))
-            + f" THEN 1 ELSE 0 END AS status_{status_index}"
+            f"{present_function}({column_sql_name}) AS status_{status_index}"
         )
 
     for column_name in analysis_columns:
-        select_expressions.append(working_column_name(column_names.index(column_name)))
+        select_expressions.append(sqlite_column_name(column_names.index(column_name)))
 
     if identifier_column is not None:
-        select_expressions.append(working_column_name(column_names.index(identifier_column)))
+        select_expressions.append(sqlite_column_name(column_names.index(identifier_column)))
 
     return (
         "SELECT "
         + ", ".join(select_expressions)
-        + f" FROM read_csv(?, {CSV_READ_OPTIONS}, columns = "
-        + build_working_columns_option(column_names)
-        + ")"
+        + f' FROM "{ANALYSIS_TABLE_NAME}"'
     )

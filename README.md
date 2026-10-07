@@ -2,8 +2,8 @@
 
 A local, offline tool that finds recurring completeness patterns in tabular data. It runs for one
 user on Windows and macOS: a React web UI talking to a loopback-only FastAPI service backed by
-DuckDB. Your data never leaves your machine. See [CONTEXT.md](CONTEXT.md) for the product language
-and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
+Python's built-in SQLite. Your data never leaves your machine. See [CONTEXT.md](CONTEXT.md) for the
+product language and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
 
 ## Current status
 
@@ -73,6 +73,10 @@ acknowledge: 2^20 = 1,048,576 distinct Completeness Patterns become possible at 
 exact summary reports every observed one. This is a statement about the number of possible patterns,
 not a performance claim.
 
+See [the synthetic SQLite benchmark report](docs/benchmarks/sqlite-synthetic-windows.md) for
+machine- and workload-specific measurements at 1–2 million rows. They are not general performance
+guarantees.
+
 Only the most recent analysis job is kept: starting a new analysis cancels and replaces the previous
 one, so results of an earlier import never survive into a newer one.
 
@@ -116,13 +120,16 @@ cd backend
 ../.venv/bin/python -m pytest -q            # macOS
 ```
 
+Pytest restricts socket connections to the local machine, so the backend suite cannot make external
+network requests. GitHub Actions runs the backend suite and frontend checks on Windows and macOS.
+
 ## Temporary file layout
 
 The API keeps all transient working data under one work directory
 (`%TEMP%\patternx` on Windows, `/tmp/patternx` on macOS), organized as:
 
-- `uploads/` — one private directory per request and per analysis job, holding the raw uploaded file
-  and the normalized CSV copy of the chosen worksheet; deleted again when the request or the job ends
-- `duckdb/` — DuckDB spill and working files
+- `uploads/` — one private directory per request and per analysis job, holding the raw uploaded file,
+  the normalized CSV copy of the chosen worksheet, and the temporary SQLite database; deleted when
+  the request or job ends
 
 Nothing in this directory is kept after a request or an analysis job finishes.

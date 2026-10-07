@@ -1,6 +1,6 @@
+import sqlite3
 from pathlib import Path
 
-import duckdb
 from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
 
 from app.analysis_jobs import (
@@ -35,6 +35,7 @@ from app.patterns import (
     normalize_identifier_column,
     resolve_analysis_columns,
 )
+from app.sqlite_storage import CSVFileError
 from app.workbooks import (
     CHOOSE_WORKSHEET_MESSAGE,
     CSV_HAS_NO_WORKSHEETS_MESSAGE,
@@ -47,10 +48,10 @@ from app.workbooks import (
     write_worksheet_to_csv,
 )
 from app.workfiles import (
+    analysis_database_path,
     clean_up_job,
     clean_up_request,
     default_work_directory,
-    duckdb_working_directory,
     new_job_directory,
     new_raw_upload_path,
     new_request_directory,
@@ -88,14 +89,10 @@ def create_application(
                     raw_file_path,
                     sheet,
                     request_directory,
-                    work_directory,
                 )
             else:
                 reject_worksheet_selection_for_csv(sheet)
-                column_names = read_column_names(
-                    raw_file_path,
-                    duckdb_working_directory(work_directory),
-                )
+                column_names = read_column_names(raw_file_path)
                 response = {
                     "sheets": [],
                     "columns": column_names,
@@ -103,10 +100,10 @@ def create_application(
                 }
         except (WorkbookFileError, WorksheetSelectionError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-        except duckdb.Error as error:
+        except (CSVFileError, sqlite3.Error) as error:
             raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
         finally:
-            clean_up_request(work_directory, request_directory)
+            clean_up_request(request_directory)
 
         return response
 
@@ -125,7 +122,7 @@ def create_application(
             analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, request_directory)
             summary = compute_column_completeness(
                 analysis_csv_path,
-                duckdb_working_directory(work_directory),
+                analysis_database_path(request_directory),
                 parse_missing_markers(missing_markers),
             )
         except (
@@ -135,10 +132,10 @@ def create_application(
             WorksheetSelectionError,
         ) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-        except duckdb.Error as error:
+        except (CSVFileError, sqlite3.Error) as error:
             raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
         finally:
-            clean_up_request(work_directory, request_directory)
+            clean_up_request(request_directory)
 
         return column_completeness_response(summary)
 
@@ -155,15 +152,15 @@ def create_application(
 
         job_id = new_job_id()
         job_directory = new_job_directory(work_directory, job_id)
+        inputs_are_ready = False
         try:
             raw_file_path = await write_upload_to_raw_file(job_directory, file)
             require_non_empty_file(raw_file_path)
             analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, job_directory)
-            job_duckdb_directory = duckdb_working_directory(job_directory)
-            column_names = read_column_names(analysis_csv_path, job_duckdb_directory)
+            column_names = read_column_names(analysis_csv_path)
             analysis_inputs = build_analysis_inputs(
                 analysis_csv_path,
-                job_duckdb_directory,
+                analysis_database_path(job_directory),
                 column_names,
                 missing_markers,
                 identifier_column,
@@ -173,8 +170,8 @@ def create_application(
                 analysis_inputs.analysis_columns,
                 high_cardinality_acknowledged,
             )
+            inputs_are_ready = True
         except HTTPException:
-            clean_up_job(job_directory)
             raise
         except (
             MissingValueMarkersError,
@@ -182,11 +179,12 @@ def create_application(
             WorkbookFileError,
             WorksheetSelectionError,
         ) as error:
-            clean_up_job(job_directory)
             raise HTTPException(status_code=400, detail=str(error)) from error
-        except duckdb.Error as error:
-            clean_up_job(job_directory)
+        except (CSVFileError, sqlite3.Error) as error:
             raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
+        finally:
+            if not inputs_are_ready:
+                clean_up_job(job_directory)
 
         job = AnalysisJob(job_id, job_directory, analysis_inputs, analysis_batch_rows)
         job_store.replace_with(job)
@@ -238,7 +236,7 @@ def require_non_empty_file(raw_file_path: Path) -> None:
 
 def build_analysis_inputs(
     analysis_csv_path: Path,
-    duckdb_directory: Path,
+    database_path: Path,
     column_names: list[str],
     raw_missing_markers: str | None,
     raw_identifier_column: str | None,
@@ -256,7 +254,7 @@ def build_analysis_inputs(
 
     return AnalysisInputs(
         analysis_csv_path=analysis_csv_path,
-        duckdb_directory=duckdb_directory,
+        database_path=database_path,
         column_names=column_names,
         missing_markers_by_column=missing_markers_by_column,
         analysis_columns=analysis_columns,
@@ -318,7 +316,6 @@ def workbook_import_response(
     raw_file_path: Path,
     worksheet_name: str | None,
     request_directory: Path,
-    work_directory: Path,
 ) -> dict[str, object]:
     """List the workbook's worksheets, and the columns of the chosen one."""
     worksheet_names = list_worksheet_names(raw_file_path)
@@ -330,7 +327,7 @@ def workbook_import_response(
         }
 
     worksheet_csv_path = analysis_csv_path_for(raw_file_path, worksheet_name, request_directory)
-    column_names = read_column_names(worksheet_csv_path, duckdb_working_directory(work_directory))
+    column_names = read_column_names(worksheet_csv_path)
     return {
         "sheets": worksheet_names,
         "columns": column_names,

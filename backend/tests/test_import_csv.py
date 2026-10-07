@@ -70,7 +70,7 @@ def test_import_returns_hostile_header_values_verbatim_as_json_text():
     }
 
 
-def test_work_directory_contains_uploads_and_duckdb_working_directories(tmp_path):
+def test_work_directory_contains_uploads_directory(tmp_path):
     work_directory = tmp_path / "work"
     test_client = make_test_client(work_directory)
 
@@ -81,7 +81,7 @@ def test_work_directory_contains_uploads_and_duckdb_working_directories(tmp_path
 
     assert response.status_code == 200
     assert (work_directory / "uploads").is_dir()
-    assert (work_directory / "duckdb").is_dir()
+    assert list((work_directory / "uploads").iterdir()) == []
 
 
 def test_successful_import_leaves_no_working_files_behind(tmp_path):

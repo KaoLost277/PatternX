@@ -121,4 +121,3 @@ def run_pattern_analysis_job(
 
 def assert_no_working_files_left(work_directory: Path) -> None:
     assert list((work_directory / "uploads").iterdir()) == []
-    assert list((work_directory / "duckdb").iterdir()) == []

@@ -1,8 +1,8 @@
 """Background analysis jobs with progress reporting and cancellation.
 
 One analysis runs on its own worker thread with its own working directory: the
-raw file, the normalized worksheet copy, and every DuckDB working file live
-inside that directory and are deleted when the job reaches any final state —
+raw file, the normalized worksheet copy, and its SQLite database live inside
+that directory and are deleted when the job reaches any final state —
 success, failure, or cancellation.
 
 Only the most recent job is kept. Starting a new analysis cancels and forgets
@@ -10,13 +10,12 @@ the previous one, so results of an earlier import can never survive into a
 newer one.
 """
 
+import sqlite3
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-
-import duckdb
 
 from app.completeness import (
     UNREADABLE_CSV_MESSAGE,
@@ -29,6 +28,12 @@ from app.patterns import (
     PatternSummary,
     compute_pattern_summary,
 )
+from app.sqlite_storage import (
+    CSVFileError,
+    CSVImportCancelledError,
+    load_csv_into_database,
+    open_analysis_database,
+)
 from app.workfiles import clean_up_job
 
 JOB_STATE_RUNNING = "running"
@@ -36,6 +41,7 @@ JOB_STATE_SUCCEEDED = "succeeded"
 JOB_STATE_FAILED = "failed"
 JOB_STATE_CANCELLED = "cancelled"
 
+STAGE_LOADING_INPUT_ROWS = "Loading Input Rows into the local analysis database"
 STAGE_COLUMN_COMPLETENESS = "Computing the Column Completeness Summary"
 STAGE_COUNTING_INPUT_ROWS = "Counting Input Rows"
 STAGE_GROUPING_INPUT_ROWS = "Grouping Input Rows by Completeness Pattern"
@@ -93,7 +99,7 @@ class AnalysisJob:
         self.rows_per_batch = rows_per_batch
 
         self.state = JOB_STATE_RUNNING
-        self.stage = STAGE_COLUMN_COMPLETENESS
+        self.stage = STAGE_LOADING_INPUT_ROWS
         self.progress: AnalysisProgress | None = None
         self.result: AnalysisJobResult | None = None
         self.error: str | None = None
@@ -101,10 +107,10 @@ class AnalysisJob:
         self.started_at = time.monotonic()
         self._final_elapsed_seconds: float | None = None
         self._cancel_requested = threading.Event()
-        # Guards the job's status fields and its live connection: the connection
-        # must not be interrupted while it is being closed.
+        # Guards the job's status fields and its live connection while cancellation
+        # interrupts work on the worker thread.
         self._lock = threading.Lock()
-        self._connection: duckdb.DuckDBPyConnection | None = None
+        self._connection: sqlite3.Connection | None = None
         self._worker = threading.Thread(
             target=self._run_analysis,
             name=f"analysis-job-{job_id}",
@@ -158,21 +164,27 @@ class AnalysisJob:
             )
 
     def _run_analysis(self) -> None:
-        connection: duckdb.DuckDBPyConnection | None = None
+        connection: sqlite3.Connection | None = None
         final_state = JOB_STATE_FAILED
         result: AnalysisJobResult | None = None
         error: str | None = None
         try:
-            connection = duckdb.connect(
-                config={"temp_directory": str(self.analysis_inputs.duckdb_directory)}
-            )
+            self.set_stage(STAGE_LOADING_INPUT_ROWS)
+            connection = open_analysis_database(self.analysis_inputs.database_path)
             with self._lock:
                 self._connection = connection
+
+            load_csv_into_database(
+                connection,
+                self.analysis_inputs.analysis_csv_path,
+                cancellation_check=self.is_cancel_requested,
+            )
+            if self.is_cancel_requested():
+                raise AnalysisCancelledError("The analysis was cancelled.")
 
             self.set_stage(STAGE_COLUMN_COMPLETENESS)
             column_completeness = summarize_column_completeness(
                 connection,
-                self.analysis_inputs.analysis_csv_path,
                 self.analysis_inputs.column_names,
                 self.analysis_inputs.missing_markers_by_column,
             )
@@ -190,13 +202,15 @@ class AnalysisJob:
                 column_completeness=column_completeness,
             )
             final_state = JOB_STATE_SUCCEEDED
-        except AnalysisCancelledError:
+        except (AnalysisCancelledError, CSVImportCancelledError):
             final_state = JOB_STATE_CANCELLED
-        except duckdb.InterruptException:
-            # The cancel request interrupted a running query.
-            final_state = JOB_STATE_CANCELLED
-        except duckdb.Error:
-            error = UNREADABLE_CSV_MESSAGE
+        except sqlite3.Error:
+            if self.is_cancel_requested():
+                final_state = JOB_STATE_CANCELLED
+            else:
+                error = UNREADABLE_CSV_MESSAGE
+        except CSVFileError as csv_error:
+            error = str(csv_error)
         except ValueError as domain_error:
             # The engine's own validation errors already carry a clear message.
             error = str(domain_error)
@@ -206,11 +220,23 @@ class AnalysisJob:
             with self._lock:
                 self._connection = None
                 if connection is not None:
-                    connection.close()
+                    try:
+                        connection.close()
+                    except Exception:
+                        final_state = JOB_STATE_FAILED
+                        result = None
+                        error = "The analysis database could not be closed cleanly."
             # The raw file and all working data are gone after every outcome,
             # and only then is the final state reported: a job that can be seen
             # as finished has nothing left on disk.
-            clean_up_job(self.job_directory)
+            try:
+                clean_up_job(self.job_directory)
+            except OSError:
+                # Never report a finished analysis while its raw or working
+                # files may still be present on disk.
+                final_state = JOB_STATE_FAILED
+                result = None
+                error = "Temporary working files could not be removed."
             self._finish(final_state, result=result, error=error)
 
     def _finish(self, state: str, result: AnalysisJobResult | None, error: str | None) -> None:

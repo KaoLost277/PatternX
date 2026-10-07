@@ -1,8 +1,11 @@
 import json
 import time
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app import main as main_module
 from app.main import app
 from support import (
     assert_no_working_files_left,
@@ -177,6 +180,31 @@ def test_failed_analysis_reports_a_clear_error_and_cleans_up(tmp_path):
     assert status["state"] == "failed"
     assert "input rows" in status["error"].lower()
     assert status["result"] is None
+    assert_no_working_files_left(work_directory)
+
+
+def test_analysis_upload_setup_failure_cleans_up_partial_files(tmp_path, monkeypatch):
+    work_directory = tmp_path / "work"
+    test_client = make_test_client(work_directory)
+
+    async def fail_after_writing_partial_upload(job_directory, uploaded_file):
+        partial_upload_path = Path(job_directory) / "partial-upload.csv"
+        partial_upload_path.write_text("sensitive row data", encoding="utf-8")
+        raise OSError("simulated upload write failure")
+
+    monkeypatch.setattr(
+        main_module,
+        "write_upload_to_raw_file",
+        fail_after_writing_partial_upload,
+    )
+
+    with pytest.raises(OSError, match="simulated upload write failure"):
+        test_client.post(
+            "/api/analysis-jobs",
+            files={"file": ("data.csv", b"value\n1\n", "text/csv")},
+            data={"analysis_columns": json.dumps(["value"])},
+        )
+
     assert_no_working_files_left(work_directory)
 
 

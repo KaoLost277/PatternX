@@ -7,16 +7,17 @@ into a wrong column layout.
 """
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
-
-CSV_READ_OPTIONS = "header = true, all_varchar = true, delim = ','"
-
-# Values and markers are trimmed with the same expression so that matching rules
-# ("trim surrounding whitespace, ignore letter case") cannot drift apart.
-SQL_TRIM_EXPRESSION = "regexp_replace({}, '^\\s+|\\s+$', '', 'g')"
+from app.sqlite_storage import (
+    ANALYSIS_COLUMN_PREFIX,
+    ANALYSIS_TABLE_NAME,
+    load_csv_into_database,
+    open_analysis_database,
+    read_column_names as read_csv_column_names,
+)
 
 MISSING_MARKERS_RULES_MESSAGE = (
     "The missing value markers must be a JSON object that maps column names "
@@ -75,31 +76,21 @@ def parse_missing_markers(raw_missing_markers: str | None) -> dict[str, list[str
     return markers_by_column
 
 
-def read_column_names(raw_file_path: Path, duckdb_directory: Path) -> list[str]:
-    connection = duckdb.connect(config={"temp_directory": str(duckdb_directory)})
-    try:
-        cursor = connection.execute(
-            f"SELECT * FROM read_csv(?, {CSV_READ_OPTIONS}) LIMIT 0",
-            [str(raw_file_path)],
-        )
-        column_names = [column_description[0] for column_description in cursor.description]
-    finally:
-        connection.close()
-    return column_names
+def read_column_names(raw_file_path: Path) -> list[str]:
+    return read_csv_column_names(raw_file_path)
 
 
 def compute_column_completeness(
     raw_file_path: Path,
-    duckdb_directory: Path,
+    database_path: Path,
     missing_markers_by_column: dict[str, list[str]],
 ) -> ColumnCompletenessSummary:
     """Count Input Rows with a present value for every column of the file."""
-    column_names = read_column_names(raw_file_path, duckdb_directory)
-    connection = duckdb.connect(config={"temp_directory": str(duckdb_directory)})
+    connection = open_analysis_database(database_path)
     try:
+        column_names = load_csv_into_database(connection, raw_file_path)
         return summarize_column_completeness(
             connection,
-            raw_file_path,
             column_names,
             missing_markers_by_column,
         )
@@ -108,20 +99,15 @@ def compute_column_completeness(
 
 
 def summarize_column_completeness(
-    connection: duckdb.DuckDBPyConnection,
-    raw_file_path: Path,
+    connection: sqlite3.Connection,
     column_names: list[str],
     missing_markers_by_column: dict[str, list[str]],
 ) -> ColumnCompletenessSummary:
     """Count Input Rows with a present value per column over one open connection."""
     reject_markers_for_unknown_columns(column_names, missing_markers_by_column)
-
-    query = build_completeness_query(column_names, missing_markers_by_column)
-    # Marker values bind first: their placeholders come before the file path
-    # placeholder in the query text.
-    query_parameters = collect_marker_parameters(column_names, missing_markers_by_column)
-    query_parameters.append(str(raw_file_path))
-    cursor = connection.execute(query, query_parameters)
+    register_presence_functions(connection, column_names, missing_markers_by_column)
+    query = build_completeness_query(column_names)
+    cursor = connection.execute(query)
     result_row = cursor.fetchone()
 
     input_rows = int(result_row[0])
@@ -157,65 +143,53 @@ def reject_markers_for_unknown_columns(
             )
 
 
-def collect_marker_parameters(
-    column_names: list[str],
-    missing_markers_by_column: dict[str, list[str]],
-) -> list[str]:
-    marker_parameters = []
-    for column_name in column_names:
-        marker_parameters.extend(missing_markers_by_column.get(column_name, []))
-    return marker_parameters
-
-
 def build_completeness_query(
     column_names: list[str],
-    missing_markers_by_column: dict[str, list[str]],
 ) -> str:
-    """Build the aggregate query over one working column per file column.
-
-    The query reads the file under generated working column names so that
-    hostile header values never take part in building SQL text.
-    """
+    """Build an aggregate query over generated SQLite column names."""
     select_expressions = ["count(*) AS input_rows"]
-    for column_index, column_name in enumerate(column_names):
-        working_name = working_column_name(column_index)
-        markers = missing_markers_by_column.get(column_name, [])
+    for column_index, _ in enumerate(column_names):
+        column_name = sqlite_column_name(column_index)
+        present_function = presence_function_name(column_index)
         select_expressions.append(
-            "sum(CASE WHEN "
-            + build_present_expression(working_name, len(markers))
-            + f" THEN 1 ELSE 0 END) AS present_{column_index}"
+            f"sum({present_function}({column_name})) AS present_{column_index}"
         )
 
     return (
         "SELECT "
         + ", ".join(select_expressions)
-        + f" FROM read_csv(?, {CSV_READ_OPTIONS}, columns = "
-        + build_working_columns_option(column_names)
-        + ")"
+        + f' FROM "{ANALYSIS_TABLE_NAME}"'
     )
 
 
-def build_present_expression(working_name: str, marker_count: int) -> str:
-    trimmed_value = SQL_TRIM_EXPRESSION.format(working_name)
-    conditions = [
-        f"{working_name} IS NOT NULL",
-        f"{trimmed_value} <> ''",
-    ]
-    if marker_count > 0:
-        trimmed_markers = SQL_TRIM_EXPRESSION.format("?")
-        marker_placeholders = ", ".join([f"lower({trimmed_markers})"] * marker_count)
-        conditions.append(f"lower({trimmed_value}) NOT IN ({marker_placeholders})")
+def register_presence_functions(
+    connection: sqlite3.Connection,
+    column_names: list[str],
+    missing_markers_by_column: dict[str, list[str]],
+) -> None:
+    for column_index, column_name in enumerate(column_names):
+        normalized_markers = {
+            marker.strip().casefold()
+            for marker in missing_markers_by_column.get(column_name, [])
+        }
 
-    return " AND ".join(conditions)
+        def is_present(value: str | None, markers: set[str] = normalized_markers) -> int:
+            if value is None:
+                return 0
+            normalized_value = value.strip().casefold()
+            return int(normalized_value != "" and normalized_value not in markers)
+
+        connection.create_function(
+            presence_function_name(column_index),
+            1,
+            is_present,
+            deterministic=True,
+        )
 
 
-def build_working_columns_option(column_names: list[str]) -> str:
-    column_type_pairs = []
-    for column_index, _ in enumerate(column_names):
-        column_type_pairs.append(f"'{working_column_name(column_index)}': 'VARCHAR'")
-
-    return "{" + ", ".join(column_type_pairs) + "}"
+def presence_function_name(column_index: int) -> str:
+    return f"patternx_is_present_{column_index}"
 
 
-def working_column_name(column_index: int) -> str:
-    return f"working_column_{column_index}"
+def sqlite_column_name(column_index: int) -> str:
+    return f'"{ANALYSIS_COLUMN_PREFIX}{column_index}"'

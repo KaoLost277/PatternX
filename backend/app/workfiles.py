@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 UPLOADS_DIRECTORY_NAME = "uploads"
-DUCKDB_WORKING_DIRECTORY_NAME = "duckdb"
+ANALYSIS_DATABASE_NAME = "analysis.sqlite3"
 
 
 def default_work_directory() -> Path:
@@ -12,15 +12,14 @@ def default_work_directory() -> Path:
 
 def prepare_work_directory(work_directory: Path) -> None:
     uploads_directory(work_directory).mkdir(parents=True, exist_ok=True)
-    duckdb_working_directory(work_directory).mkdir(parents=True, exist_ok=True)
 
 
 def uploads_directory(work_directory: Path) -> Path:
     return work_directory / UPLOADS_DIRECTORY_NAME
 
 
-def duckdb_working_directory(work_directory: Path) -> Path:
-    return work_directory / DUCKDB_WORKING_DIRECTORY_NAME
+def analysis_database_path(directory: Path) -> Path:
+    return directory / ANALYSIS_DATABASE_NAME
 
 
 def new_request_directory(work_directory: Path) -> Path:
@@ -38,10 +37,9 @@ def new_raw_upload_path(request_directory: Path, suffix: str) -> Path:
     return Path(raw_file.name)
 
 
-def clean_up_request(work_directory: Path, request_directory: Path) -> None:
-    """Remove everything this request left behind, on success and on failure."""
-    shutil.rmtree(request_directory, ignore_errors=True)
-    clear_duckdb_working_directory(work_directory)
+def clean_up_request(request_directory: Path) -> None:
+    """Remove this request's upload and SQLite files, without touching other work."""
+    shutil.rmtree(request_directory)
 
 
 def new_job_directory(work_directory: Path, job_id: str) -> Path:
@@ -53,10 +51,4 @@ def new_job_directory(work_directory: Path, job_id: str) -> Path:
 
 def clean_up_job(job_directory: Path) -> None:
     """Remove everything one analysis job left behind, on every outcome."""
-    shutil.rmtree(job_directory, ignore_errors=True)
-
-
-def clear_duckdb_working_directory(work_directory: Path) -> None:
-    working_directory = duckdb_working_directory(work_directory)
-    shutil.rmtree(working_directory, ignore_errors=True)
-    working_directory.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(job_directory)

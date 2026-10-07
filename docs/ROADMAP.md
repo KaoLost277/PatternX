@@ -31,10 +31,10 @@ Keep the HTML prototype as a reference while migrating its desired workflow into
 
 ### 1. Establish the local application boundary
 
-- Add a React/Vite frontend and a FastAPI/DuckDB backend as separate applications.
+- Add a React/Vite frontend and a FastAPI/SQLite backend as separate applications.
 - Provide local run scripts for Windows and macOS.
 - Bind the API to loopback only and remove runtime dependencies on CDNs or other external services.
-- Define temporary-file handling so raw uploads and DuckDB spill files are cleaned up after success, failure, or cancellation.
+- Define temporary-file handling so raw uploads and SQLite working databases are cleaned up after success, failure, or cancellation.
 
 **Exit criteria:** the application starts locally on both target operating systems, makes no external runtime requests, and does not expose the API to the network.
 
