@@ -141,13 +141,20 @@ function Get-AgentLoopAvailableModels {
             continue
         }
 
+        $selectableIdProperty = $model.PSObject.Properties["id"]
+        $selectableModelId = [string]$modelIdProperty.Value
+        if ($null -ne $selectableIdProperty -and
+            -not [string]::IsNullOrWhiteSpace([string]$selectableIdProperty.Value)) {
+            $selectableModelId = [string]$selectableIdProperty.Value
+        }
+
         $familyProperty = $model.PSObject.Properties["family"]
         $family = ""
         if ($null -ne $familyProperty) {
             $family = [string]$familyProperty.Value
         }
         if ([string]::IsNullOrWhiteSpace($family)) {
-            $family = "$($providerProperty.Value)/$($modelIdProperty.Value)"
+            $family = "$($providerProperty.Value)/$selectableModelId"
         }
 
         $nameProperty = $model.PSObject.Properties["name"]
@@ -163,7 +170,7 @@ function Get-AgentLoopAvailableModels {
         }
 
         [pscustomobject]@{
-            Id = "$($providerProperty.Value)/$($modelIdProperty.Value)"
+            Id = "$($providerProperty.Value)/$selectableModelId"
             ProviderId = [string]$providerProperty.Value
             ModelId = [string]$modelIdProperty.Value
             Family = $family

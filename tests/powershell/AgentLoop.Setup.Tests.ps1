@@ -122,6 +122,26 @@ BeforeAll {
             }
             [pscustomobject]@{
                 providerID = "openrouter"
+                id = "~anthropic/claude-opus-latest"
+                modelID = "anthropic/claude-opus-5.5"
+                family = "claude-opus-latest"
+                name = "Claude Opus Latest"
+                status = "active"
+                enabled = $true
+                capabilities = [pscustomobject]@{
+                    tools = $true
+                }
+                variants = @(
+                    [pscustomobject]@{
+                        id = "high"
+                    }
+                    [pscustomobject]@{
+                        id = "max"
+                    }
+                )
+            }
+            [pscustomobject]@{
+                providerID = "openrouter"
                 modelID = "x-ai/grok-4.7"
                 family = "grok"
                 name = "Grok 4.7"
@@ -352,6 +372,24 @@ Describe "Invoke-AgentLoopSetup" {
         $result.Models.Reviewers[0].Id | Should -Be "openrouter/openai/gpt-6-luna"
         $result.Models.Reviewers[1].Id | Should -Be "openrouter/openai/gpt-5.4"
         (Test-Path $configurationPath) | Should -Be $true
+    }
+
+    It "uses the OpenCode catalog ID when resolving a model alias" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "model-alias-agent-loop.json"
+        $selection = New-AgentLoopDefaultSetupSelection -Reviewers @(
+            "openrouter/~anthropic/claude-opus-latest"
+            "openrouter/x-ai/grok-4.7"
+        )
+
+        $result = Invoke-AgentLoopSetup `
+            -ConfigPath $configurationPath `
+            -SetupSelection $selection `
+            -CommandAdapter $fakeCommandAdapter.Invoke `
+            -WorkingDirectory $TestDrive
+
+        $result.Models.Reviewers[0].Id | Should -Be "openrouter/~anthropic/claude-opus-latest"
+        $result.Models.Reviewers[0].Argument | Should -Be "openrouter/~anthropic/claude-opus-latest#high"
     }
 
     It "rejects using one model ID for both independent reviewer roles" {
