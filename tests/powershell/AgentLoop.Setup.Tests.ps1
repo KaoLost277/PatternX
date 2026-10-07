@@ -222,6 +222,29 @@ Describe "Invoke-AgentLoopSetup" {
         (Test-Path $configurationPath) | Should -Be $false
     }
 
+    It "refuses GitHub credentials when token write scopes cannot be verified" {
+        $responses = New-AgentLoopSetupResponses
+        $responses["gh auth status"] = [pscustomobject]@{
+            ExitCode = 0
+            StdOut = "Logged in to github.com"
+            StdErr = ""
+        }
+        $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $configurationPath = Join-Path $TestDrive "unknown-write-scope-agent-loop.json"
+        $selection = New-AgentLoopDefaultSelection
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -ModelSelection $selection `
+                -ReasoningBudget "large" `
+                -CommandAdapter $fake.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*scope*"
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+
     It "allows distinct reviewer models from the same family" {
         $fake = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "same-family-agent-loop.json"

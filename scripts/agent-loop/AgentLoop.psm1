@@ -417,15 +417,16 @@ function Invoke-AgentLoopSetup {
         throw "GitHub access must include write permission to create branches and pull requests."
     }
 
-    $githubScopeStatus = "not-exposed"
-    if ($tokenScopes.Count -gt 0 -and $tokenScopes -notcontains "none") {
-        $hasRepositoryScope = $tokenScopes -contains "repo"
-        $hasPublicRepositoryScope = -not $isPrivateProperty.Value -and $tokenScopes -contains "public_repo"
-        if (-not $hasRepositoryScope -and -not $hasPublicRepositoryScope) {
-            throw "The GitHub token is missing the repository write scope required by the agent loop."
-        }
-        $githubScopeStatus = "verified"
+    if ($tokenScopes.Count -eq 0 -or $tokenScopes -contains "none") {
+        throw "GitHub CLI did not expose token scopes. Authenticate with a token that exposes repository write access before running setup."
     }
+
+    $hasRepositoryScope = $tokenScopes -contains "repo"
+    $hasPublicRepositoryScope = -not $isPrivateProperty.Value -and $tokenScopes -contains "public_repo"
+    if (-not $hasRepositoryScope -and -not $hasPublicRepositoryScope) {
+        throw "The GitHub token is missing the repository write scope required by the agent loop."
+    }
+    $githubScopeStatus = "verified"
 
     if ($null -eq $ModelSelection -or [string]::IsNullOrWhiteSpace($ReasoningBudget)) {
         $interactiveSelection = Get-AgentLoopInteractiveModelSelection -AvailableModels $availableModels

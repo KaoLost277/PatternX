@@ -51,12 +51,7 @@ Write-Host "Agent loop setup is ready for $($setupResult.Repository)."
 Write-Host "Default branch: $($setupResult.DefaultBranch)"
 Write-Host "Configuration: $($setupResult.ConfigurationPath)"
 Write-Host "Reasoning budget: $($setupResult.ReasoningBudget)"
-if ($setupResult.GitHubScopeStatus -eq "verified") {
-    Write-Host "GitHub repository write scope: verified"
-}
-else {
-    Write-Warning "GitHub reports repository write access but does not expose token scopes. The run must verify issue-claim access before starting model work."
-}
+Write-Host "GitHub repository write scope: verified"
 
 foreach ($roleName in @("Implementer", "Repairer")) {
     Write-AgentLoopModelSummary -RoleName $roleName -Model $setupResult.Models.$roleName
