@@ -2,7 +2,12 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.patterns import PatternTally
-from support import run_pattern_analysis_job
+from support import (
+    make_workbook_bytes,
+    pattern_analysis_fields,
+    run_analysis_job,
+    run_pattern_analysis_job,
+)
 
 client = TestClient(app)
 
@@ -127,6 +132,35 @@ def test_hostile_headers_and_values_are_returned_verbatim_as_json_text():
 
     assert "<script>alert('x')</script>" in shown_values
     assert "=cmd|' /C calc'!A0" in shown_values
+
+
+def test_hostile_xlsx_headers_and_values_stay_plain_text_in_analysis_previews():
+    workbook_bytes = make_workbook_bytes(
+        {
+            "Data": [
+                ["<script>alert(1)</script>", "notes"],
+                ["<img src=x onerror=alert(1)>", '=HYPERLINK("http://example.com")'],
+            ]
+        }
+    )
+    analysis_columns = ["<script>alert(1)</script>", "notes"]
+
+    status = run_analysis_job(
+        client,
+        "hostile.xlsx",
+        workbook_bytes,
+        pattern_analysis_fields(analysis_columns, sheet="Data"),
+    )
+    status_response = client.get(f"/api/analysis-jobs/{status['job_id']}")
+
+    assert status["state"] == "succeeded"
+    assert status_response.headers["content-type"].startswith("application/json")
+    assert status["result"]["analysis_columns"] == analysis_columns
+    preview_row = status["result"]["patterns"][0]["preview_rows"][0]
+    assert preview_row["values"] == [
+        "<img src=x onerror=alert(1)>",
+        '=HYPERLINK("http://example.com")',
+    ]
 
 
 def test_long_cell_values_are_shortened_in_the_preview():

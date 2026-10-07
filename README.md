@@ -73,6 +73,13 @@ acknowledge: 2^20 = 1,048,576 distinct Completeness Patterns become possible at 
 exact summary reports every observed one. This is a statement about the number of possible patterns,
 not a performance claim.
 
+The app also warns when a CSV upload is larger than the largest recorded synthetic CSV benchmark
+(215.72 MiB), or when a selection contains more analyzed columns than the largest measured selection
+(21). These warnings are derived from the recorded workloads below; they are not limits, and the app
+never truncates the exact results. XLSX upload sizes are not compared because compression makes them
+incomparable with the normalized CSV measurements. Runtime and memory use outside the recorded
+workloads are unmeasured.
+
 See [the synthetic SQLite benchmark report](docs/benchmarks/sqlite-synthetic-windows.md) for
 machine- and workload-specific measurements at 1–2 million rows. They are not general performance
 guarantees.

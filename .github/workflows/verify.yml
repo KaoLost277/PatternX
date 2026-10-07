@@ -47,6 +47,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Test hostile text rendering
+        run: npm run test:safety --prefix frontend
+
       - name: Lint frontend
         run: npm run lint --prefix frontend
 

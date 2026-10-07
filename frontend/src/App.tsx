@@ -1,6 +1,18 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import "./App.css";
+import { PatternPreview, PatternStatusLabel } from "./PatternPreview";
+import type { CompletenessPattern, PatternSummary } from "./PatternPreview";
+import {
+  csvExceedsBenchmarkSize,
+  MAX_BENCHMARKED_FILE_SIZE_MIB,
+  MAX_BENCHMARKED_SELECTED_COLUMNS,
+  selectedColumnsExceedBenchmark,
+} from "./benchmarkLimits";
+import {
+  PATTERN_STATUS_MISSING,
+  PATTERN_STATUS_PRESENT,
+} from "./patternStatus";
 
 interface ColumnCompleteness {
   name: string;
@@ -13,25 +25,6 @@ interface ColumnCompleteness {
 interface ColumnCompletenessSummary {
   input_rows: number;
   columns: ColumnCompleteness[];
-}
-
-interface PreviewRow {
-  identifier_value: string | null;
-  values: (string | null)[];
-}
-
-interface CompletenessPattern {
-  statuses: string[];
-  count: number;
-  share: number;
-  preview_rows: PreviewRow[];
-}
-
-interface PatternSummary {
-  input_rows: number;
-  identifier_column: string | null;
-  analysis_columns: string[];
-  patterns: CompletenessPattern[];
 }
 
 interface AnalysisJobProgress {
@@ -171,8 +164,6 @@ function formatShare(share: number): string {
 }
 
 const PATTERN_FILTER_ANY = "any";
-const PATTERN_STATUS_PRESENT = "present";
-const PATTERN_STATUS_MISSING = "missing";
 const MOST_COMMON_PATTERNS_SHOWN = 10;
 
 const JOB_STATE_RUNNING = "running";
@@ -197,20 +188,6 @@ function withoutIdentifierColumn(
   // The Identifier Column never joins the pattern analysis, so it is dropped
   // wherever the columns to analyze are decided.
   return analysisColumns.filter((columnName) => columnName !== identifierColumn);
-}
-
-function patternStatusClass(status: string): string {
-  if (status === PATTERN_STATUS_PRESENT) {
-    return "pattern-status pattern-status-present";
-  }
-  return "pattern-status pattern-status-missing";
-}
-
-function patternStatusLabel(status: string): string {
-  if (status === PATTERN_STATUS_PRESENT) {
-    return "Present";
-  }
-  return "Missing";
 }
 
 function patternsMatchingFilters(
@@ -253,65 +230,6 @@ function formatCountAndShare(count: number, share: number, inputRows: number): s
 
 function formatElapsedSeconds(elapsedSeconds: number): string {
   return `${elapsedSeconds.toFixed(1)} seconds`;
-}
-
-interface PatternPreviewProps {
-  patternSummary: PatternSummary;
-  pattern: CompletenessPattern;
-}
-
-function PatternPreview({ patternSummary, pattern }: PatternPreviewProps) {
-  if (pattern.preview_rows.length === 0) {
-    return (
-      <p className="hint-text">
-        No sample rows were kept for this pattern. Its exact count above is unaffected.
-      </p>
-    );
-  }
-
-  const identifierColumnLabel =
-    patternSummary.identifier_column !== null ? patternSummary.identifier_column : "Input Row";
-
-  return (
-    <div className="preview-panel">
-      <p className="filter-heading">
-        {pattern.preview_rows.length} sample Input Rows of this pattern, out of its{" "}
-        {pattern.count.toLocaleString()}. Long values are shortened. Every value is shown as plain
-        text.
-      </p>
-      <div className="summary-table-frame">
-        <table className="summary-table">
-          <thead>
-            <tr>
-              <th scope="col">{identifierColumnLabel}</th>
-              {patternSummary.analysis_columns.map((columnName, columnIndex) => (
-                <th key={columnIndex} scope="col">
-                  {columnName}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {pattern.preview_rows.map((previewRow, previewRowIndex) => (
-              <tr key={previewRowIndex}>
-                <th scope="row">{previewRow.identifier_value ?? "Not set"}</th>
-                {previewRow.values.map((cellValue, valueIndex) => (
-                  <td key={valueIndex}>
-                    <div className="preview-cell">
-                      <span className={patternStatusClass(pattern.statuses[valueIndex])}>
-                        {patternStatusLabel(pattern.statuses[valueIndex])}
-                      </span>
-                      {cellValue !== null && <span className="preview-value">{cellValue}</span>}
-                    </div>
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
 }
 
 function App() {
@@ -665,6 +583,13 @@ function App() {
   const columnsToAnalyze = withoutIdentifierColumn(analysisColumns, identifierColumn);
   const highCardinalityWarningRequired =
     columnsToAnalyze.length >= HIGH_CARDINALITY_COLUMN_THRESHOLD;
+  const selectedFileIsCsv = selectedFile?.name.toLowerCase().endsWith(".csv") ?? false;
+  const selectedFileSizeMib = selectedFile ? selectedFile.size / (1024 * 1024) : 0;
+  const csvUploadExceedsBenchmarkSize =
+    selectedFileIsCsv && selectedFile !== null && csvExceedsBenchmarkSize(selectedFile.size);
+  const selectedColumnCountExceedsBenchmark = selectedColumnsExceedBenchmark(
+    columnsToAnalyze.length,
+  );
   const computeButtonDisabled =
     statusMessage !== null ||
     columnsToAnalyze.length === 0 ||
@@ -720,6 +645,17 @@ function App() {
         )}
 
         {selectedFileName && <p className="status-line">Selected file: {selectedFileName}</p>}
+        {csvUploadExceedsBenchmarkSize && (
+          <div className="warning-panel" role="note">
+            <p className="warning-heading">File size is outside the measured range</p>
+            <p className="hint-text">
+              This file is {selectedFileSizeMib.toFixed(2)} MiB. The largest recorded synthetic CSV
+              benchmark was {MAX_BENCHMARKED_FILE_SIZE_MIB.toFixed(2)} MiB (2,000,000 rows, 24
+              columns, and 21 analyzed columns). Runtime and memory use outside the recorded
+              workloads are unmeasured; this warning does not limit or truncate the analysis.
+            </p>
+          </div>
+        )}
         {statusMessage && <p className="status-line">{statusMessage}</p>}
         {errorMessage && <p className="error-message">{errorMessage}</p>}
 
@@ -856,6 +792,14 @@ function App() {
                       ? `${identifierColumn} is the Identifier Column and stays out of the analysis.`
                       : "The selected columns define one Completeness Pattern per Input Row."}
                   </p>
+                  {selectedColumnCountExceedsBenchmark && (
+                    <p className="hint-text">
+                      This selection uses {columnsToAnalyze.length} columns; the largest recorded
+                      benchmark used {MAX_BENCHMARKED_SELECTED_COLUMNS}. Runtime and memory use for
+                      wider selections are unmeasured. This warning does not limit or truncate the
+                      exact results.
+                    </p>
+                  )}
                 </fieldset>
               </div>
 
@@ -989,9 +933,7 @@ function App() {
                           <tr>
                             {pattern.statuses.map((status, statusIndex) => (
                               <td key={statusIndex}>
-                                <span className={patternStatusClass(status)}>
-                                  {patternStatusLabel(status)}
-                                </span>
+                                <PatternStatusLabel status={status} />
                               </td>
                             ))}
                             <td>{pattern.count}</td>
