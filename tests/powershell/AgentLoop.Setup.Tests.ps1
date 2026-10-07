@@ -125,12 +125,12 @@ BeforeAll {
             }
             "gh auth status" = [pscustomobject]@{
                 ExitCode = 0
-                StdOut = "Logged in to github.com"
+                StdOut = "Logged in to github.com`n  - Token scopes: 'repo', 'workflow'"
                 StdErr = ""
             }
-            "gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission" = [pscustomobject]@{
+            "gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission,isPrivate" = [pscustomobject]@{
                 ExitCode = 0
-                StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":{"name":"main"},"viewerPermission":"WRITE"}'
+                StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":{"name":"main"},"viewerPermission":"WRITE","isPrivate":false}'
                 StdErr = ""
             }
         }
@@ -161,6 +161,7 @@ Describe "Invoke-AgentLoopSetup" {
 
         $result.Repository | Should -Be "KaoLost277/PatternX"
         $result.DefaultBranch | Should -Be "main"
+        $result.GitHubScopeStatus | Should -Be "verified"
         (Test-Path $configurationPath) | Should -Be $true
         $savedConfiguration = Get-Content $configurationPath -Raw | ConvertFrom-Json
         $savedConfiguration.Models.Implementer.Id | Should -Be "openrouter/openai/gpt-6-luna"
@@ -177,9 +178,9 @@ Describe "Invoke-AgentLoopSetup" {
 
     It "refuses GitHub accounts without write access before saving configuration" {
         $responses = New-AgentLoopSetupResponses
-        $responses["gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission"] = [pscustomobject]@{
+        $responses["gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission,isPrivate"] = [pscustomobject]@{
             ExitCode = 0
-            StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":{"name":"main"},"viewerPermission":"READ"}'
+            StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":{"name":"main"},"viewerPermission":"READ","isPrivate":false}'
             StdErr = ""
         }
         $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
@@ -194,6 +195,29 @@ Describe "Invoke-AgentLoopSetup" {
                 -CommandAdapter $fake.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+
+    It "refuses classic GitHub credentials without repository write scope" {
+        $responses = New-AgentLoopSetupResponses
+        $responses["gh auth status"] = [pscustomobject]@{
+            ExitCode = 0
+            StdOut = "Logged in to github.com`n  - Token scopes: 'read:org', 'workflow'"
+            StdErr = ""
+        }
+        $fake = New-FakeAgentLoopCommandAdapter -Responses $responses
+        $configurationPath = Join-Path $TestDrive "missing-write-scope-agent-loop.json"
+        $selection = New-AgentLoopDefaultSelection
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -ModelSelection $selection `
+                -ReasoningBudget "large" `
+                -CommandAdapter $fake.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*repo*scope*"
 
         (Test-Path $configurationPath) | Should -Be $false
     }
@@ -273,9 +297,9 @@ Describe "Invoke-AgentLoopSetup" {
 
     It "refuses an empty repository without a default branch" {
         $responses = New-AgentLoopSetupResponses
-        $responses["gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission"] = [pscustomobject]@{
+        $responses["gh repo view --json nameWithOwner,defaultBranchRef,viewerPermission,isPrivate"] = [pscustomobject]@{
             ExitCode = 0
-            StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":null,"viewerPermission":"WRITE"}'
+            StdOut = '{"nameWithOwner":"KaoLost277/PatternX","defaultBranchRef":null,"viewerPermission":"WRITE","isPrivate":false}'
             StdErr = ""
         }
         $fake = New-FakeAgentLoopCommandAdapter -Responses $responses

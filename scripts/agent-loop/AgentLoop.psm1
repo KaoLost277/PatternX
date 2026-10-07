@@ -368,10 +368,20 @@ function Invoke-AgentLoopSetup {
         -Arguments @("auth", "status") `
         -WorkingDirectory $WorkingDirectory
 
+    $authOutput = @([string]$authResult.StdOut, [string]$authResult.StdErr) -join [Environment]::NewLine
+    $tokenScopeMatch = [regex]::Match($authOutput, "(?im)^\s*-\s*Token scopes:\s*(.*)$")
+    $tokenScopes = @()
+    if ($tokenScopeMatch.Success) {
+        $tokenScopes = @(
+            [regex]::Matches($tokenScopeMatch.Groups[1].Value, "'([^']+)'") |
+                ForEach-Object { $_.Groups[1].Value }
+        )
+    }
+
     $repositoryResult = Invoke-AgentLoopCommand `
         -CommandAdapter $CommandAdapter `
         -Executable "gh" `
-        -Arguments @("repo", "view", "--json", "nameWithOwner,defaultBranchRef,viewerPermission") `
+        -Arguments @("repo", "view", "--json", "nameWithOwner,defaultBranchRef,viewerPermission,isPrivate") `
         -WorkingDirectory $WorkingDirectory
 
     try {
@@ -398,8 +408,23 @@ function Invoke-AgentLoopSetup {
         throw "The GitHub repository has no default branch."
     }
 
+    $isPrivateProperty = $repository.PSObject.Properties["isPrivate"]
+    if ($null -eq $isPrivateProperty) {
+        throw "GitHub CLI did not report whether the repository is private."
+    }
+
     if ($repository.viewerPermission -notin @("WRITE", "MAINTAIN", "ADMIN")) {
         throw "GitHub access must include write permission to create branches and pull requests."
+    }
+
+    $githubScopeStatus = "not-exposed"
+    if ($tokenScopes.Count -gt 0 -and $tokenScopes -notcontains "none") {
+        $hasRepositoryScope = $tokenScopes -contains "repo"
+        $hasPublicRepositoryScope = -not $isPrivateProperty.Value -and $tokenScopes -contains "public_repo"
+        if (-not $hasRepositoryScope -and -not $hasPublicRepositoryScope) {
+            throw "The GitHub token is missing the repository write scope required by the agent loop."
+        }
+        $githubScopeStatus = "verified"
     }
 
     if ($null -eq $ModelSelection -or [string]::IsNullOrWhiteSpace($ReasoningBudget)) {
@@ -435,6 +460,7 @@ function Invoke-AgentLoopSetup {
         SchemaVersion = 1
         Repository = $repositoryName
         DefaultBranch = $defaultBranch
+        GitHubScopeStatus = $githubScopeStatus
         ReasoningBudget = $ReasoningBudget
         Models = $resolvedModels
     }
@@ -462,6 +488,7 @@ function Invoke-AgentLoopSetup {
         ConfigurationPath = $ConfigPath
         Repository = $repositoryName
         DefaultBranch = $defaultBranch
+        GitHubScopeStatus = $githubScopeStatus
         ReasoningBudget = $ReasoningBudget
         Models = $resolvedModels
     }
