@@ -467,6 +467,8 @@ Describe "Agent-loop OpenCode permissions" {
 
         $workerProfile | Should -Match 'action: "\*"\s+resource: "\*"\s+effect: deny'
         $workerProfile | Should -Match 'action: external_directory\s+resource: "\*"\s+effect: deny'
+        $workerProfile | Should -Match 'action: edit\s+resource: "\.git"\s+effect: deny'
+        $workerProfile | Should -Match 'action: read\s+resource: "\.git"\s+effect: deny'
         $workerProfile | Should -Match 'resource: "\*\.env\*"\s+effect: deny'
         $workerProfile | Should -Match 'resource: "\*secrets/\*"\s+effect: deny'
         $workerProfile | Should -Match 'resource: "\*secret\*"\s+effect: deny'
@@ -477,6 +479,7 @@ Describe "Agent-loop OpenCode permissions" {
         $workerProfile | Should -Not -Match 'action: shell\s+resource: "git '
         $reviewerProfile | Should -Match 'action: "\*"\s+resource: "\*"\s+effect: deny'
         $reviewerProfile | Should -Match 'action: external_directory\s+resource: "\*"\s+effect: deny'
+        $reviewerProfile | Should -Match 'action: read\s+resource: "\.git"\s+effect: deny'
         $reviewerProfile | Should -Match 'resource: "\*secret\*"\s+effect: deny'
         $reviewerProfile | Should -Match 'resource: "\*\.env\.example"\s+effect: allow'
         $reviewerProfile | Should -Not -Match 'action: grep\s+resource: "\*"\s+effect: allow'

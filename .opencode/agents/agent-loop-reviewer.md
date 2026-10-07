@@ -11,6 +11,18 @@ permissions:
   - action: read
     resource: "*"
     effect: allow
+  - action: read
+    resource: ".git"
+    effect: deny
+  - action: read
+    resource: ".git/*"
+    effect: deny
+  - action: read
+    resource: "*/.git"
+    effect: deny
+  - action: read
+    resource: "*/.git/*"
+    effect: deny
   - action: glob
     resource: "*"
     effect: allow
@@ -55,6 +67,12 @@ permissions:
     effect: deny
   - action: read
     resource: "*.netrc"
+    effect: deny
+  - action: read
+    resource: "*.ssh/*"
+    effect: deny
+  - action: read
+    resource: "*.aws/*"
     effect: deny
   - action: read
     resource: "*.env.example"
