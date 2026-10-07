@@ -1,6 +1,6 @@
 # Pattern-Matching Input Row Details and Export
 
-**Status:** Accepted; implementation in progress.
+**Status:** Implemented and verified.
 
 **Spec:** [GitHub issue #12](https://github.com/KaoLost277/PatternX/issues/12).
 
