@@ -456,8 +456,8 @@ class AnalysisJobStore:
             job.wait_until_stopped()
         return job
 
-    def shutdown(self) -> None:
-        """Stop the current worker and remove any data retained for row details."""
+    def clear(self) -> None:
+        """Cancel all current work and remove retained row databases."""
         with self._lock:
             current_jobs = list(self._jobs.values())
             self._jobs.clear()
@@ -467,6 +467,10 @@ class AnalysisJobStore:
         for job in current_jobs:
             job.wait_until_stopped(timeout=None)
             job.clean_up_retained_data()
+
+    def shutdown(self) -> None:
+        """Stop the current worker and remove any data retained for row details."""
+        self.clear()
 
 
 def new_job_id() -> str:

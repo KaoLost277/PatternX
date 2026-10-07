@@ -24,6 +24,22 @@ from app.completeness import (
     read_column_names,
     reject_markers_for_unknown_columns,
 )
+from app.data_analyses import (
+    DataAnalysisInputs,
+    DataAnalysisSelectionError,
+    FormalTermsSummary,
+    GroupDataSummary,
+    resolve_data_analysis_columns,
+)
+from app.data_analysis_jobs import (
+    DATA_ANALYSIS_KINDS,
+    FORMAL_TERMS_KIND,
+    GROUP_DATA_KIND,
+    DataAnalysisJob,
+    DataAnalysisJobStore,
+    DataAnalysisNotSucceededError,
+    DataAnalysisTargetNotFoundError,
+)
 from app.exports import (
     COLUMN_COMPLETENESS_EXPORT_NAME,
     PATTERN_SUMMARY_EXPORT_NAME,
@@ -77,6 +93,7 @@ def create_application(
 ) -> FastAPI:
     prepare_work_directory(work_directory)
     job_store = AnalysisJobStore()
+    data_analysis_job_store = DataAnalysisJobStore()
 
     @asynccontextmanager
     async def application_lifespan(_application: FastAPI):
@@ -84,9 +101,10 @@ def create_application(
             yield
         finally:
             job_store.shutdown()
+            data_analysis_job_store.shutdown()
 
     application = FastAPI(
-        title="PatternX Data Completeness Profiler",
+        title="PatternX Data Profiler",
         lifespan=application_lifespan,
     )
 
@@ -96,6 +114,8 @@ def create_application(
         sheet: str | None = Form(default=None),
     ) -> dict[str, object]:
         require_supported_file(file)
+        job_store.clear()
+        data_analysis_job_store.clear()
 
         request_directory = new_request_directory(work_directory)
         try:
@@ -129,6 +149,7 @@ def create_application(
         file: UploadFile,
         sheet: str | None = Form(default=None),
         missing_markers: str | None = Form(default=None),
+        reset_analysis_results: bool = Form(default=False),
     ) -> dict[str, object]:
         require_supported_file(file)
 
@@ -153,6 +174,10 @@ def create_application(
             raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
         finally:
             clean_up_request(request_directory)
+
+        if reset_analysis_results:
+            job_store.clear()
+            data_analysis_job_store.clear()
 
         return column_completeness_response(summary)
 
@@ -207,6 +232,62 @@ def create_application(
         job_store.replace_with(job)
         return analysis_job_status_response(job)
 
+    @application.post("/api/data-analysis-jobs", status_code=201)
+    async def create_data_analysis_job(
+        file: UploadFile,
+        analysis_kind: str = Form(),
+        sheet: str | None = Form(default=None),
+        missing_markers: str | None = Form(default=None),
+        selected_columns: str | None = Form(default=None),
+    ) -> dict[str, object]:
+        require_supported_file(file)
+        if analysis_kind not in DATA_ANALYSIS_KINDS:
+            raise HTTPException(
+                status_code=400,
+                detail="Choose either Formal Terms or Group Data for this analysis.",
+            )
+
+        job_id = new_job_id()
+        job_directory = new_job_directory(work_directory, job_id)
+        inputs_are_ready = False
+        try:
+            raw_file_path = await write_upload_to_raw_file(job_directory, file)
+            require_non_empty_file(raw_file_path)
+            analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, job_directory)
+            column_names = read_column_names(analysis_csv_path)
+            analysis_inputs = build_data_analysis_inputs(
+                analysis_csv_path,
+                analysis_database_path(job_directory),
+                column_names,
+                missing_markers,
+                selected_columns,
+            )
+            inputs_are_ready = True
+        except HTTPException:
+            raise
+        except (
+            ColumnSelectionError,
+            DataAnalysisSelectionError,
+            MissingValueMarkersError,
+            WorkbookFileError,
+            WorksheetSelectionError,
+        ) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except (CSVFileError, sqlite3.Error) as error:
+            raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
+        finally:
+            if not inputs_are_ready:
+                clean_up_job(job_directory)
+
+        job = DataAnalysisJob(
+            job_id,
+            analysis_kind,
+            job_directory,
+            analysis_inputs,
+        )
+        data_analysis_job_store.replace_with(job)
+        return data_analysis_job_status_response(job)
+
     @application.get("/api/analysis-jobs/{job_id}")
     async def get_analysis_job(job_id: str) -> dict[str, object]:
         return analysis_job_status_response(find_job_or_raise(job_id))
@@ -257,6 +338,56 @@ def create_application(
 
         return analysis_job_status_response(job)
 
+    @application.get("/api/data-analysis-jobs/{job_id}")
+    async def get_data_analysis_job(job_id: str) -> dict[str, object]:
+        return data_analysis_job_status_response(find_data_analysis_job_or_raise(job_id))
+
+    @application.post("/api/data-analysis-jobs/{job_id}/cancel")
+    async def cancel_data_analysis_job(job_id: str) -> dict[str, object]:
+        job = data_analysis_job_store.cancel(job_id)
+        if job is None:
+            raise unknown_job_error(job_id)
+        return data_analysis_job_status_response(job)
+
+    @application.get("/api/data-analysis-jobs/{job_id}/rows")
+    async def get_data_analysis_rows(
+        job_id: str,
+        target_kind: str = Query(),
+        item_index: int = Query(ge=0),
+        column_index: int | None = Query(default=None, ge=0),
+        page: int = Query(default=1, ge=1),
+    ) -> dict[str, object]:
+        job = find_data_analysis_job_or_raise(job_id)
+        try:
+            return job.rows_page(target_kind, item_index, column_index, page)
+        except (DataAnalysisNotSucceededError, DataAnalysisTargetNotFoundError) as error:
+            raise data_analysis_rows_request_error(error, job_id) from error
+
+    @application.get("/api/data-analysis-jobs/{job_id}/exports/rows.csv")
+    async def download_data_analysis_rows_export(
+        job_id: str,
+        target_kind: str = Query(),
+        item_index: int = Query(ge=0),
+        column_index: int | None = Query(default=None, ge=0),
+    ) -> Response:
+        job = find_data_analysis_job_or_raise(job_id)
+        try:
+            columns, matching_rows = job.open_rows_export(
+                target_kind,
+                item_index,
+                column_index,
+            )
+        except (DataAnalysisNotSucceededError, DataAnalysisTargetNotFoundError) as error:
+            raise data_analysis_rows_request_error(error, job_id) from error
+
+        export_name = f"{job.analysis_kind}_{target_kind}_rows.csv"
+        return StreamingResponse(
+            iter_csv_text(columns, matching_rows),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{export_name}"'},
+            background=BackgroundTask(matching_rows.close),
+        )
+
     def pattern_rows_request_error(
         error: AnalysisNotSucceededError | PatternIndexNotFoundError,
         job_id: str,
@@ -283,7 +414,52 @@ def create_application(
 
         return job
 
+    def find_data_analysis_job_or_raise(job_id: str) -> DataAnalysisJob:
+        job = data_analysis_job_store.find(job_id)
+        if job is None:
+            raise unknown_job_error(job_id)
+        return job
+
     return application
+
+
+def build_data_analysis_inputs(
+    analysis_csv_path: Path,
+    database_path: Path,
+    column_names: list[str],
+    raw_missing_markers: str | None,
+    raw_selected_columns: str | None,
+) -> DataAnalysisInputs:
+    missing_markers_by_column = parse_missing_markers(raw_missing_markers)
+    reject_markers_for_unknown_columns(column_names, missing_markers_by_column)
+    selected_columns = resolve_data_analysis_columns(
+        column_names,
+        parse_analysis_columns(raw_selected_columns),
+    )
+
+    return DataAnalysisInputs(
+        analysis_csv_path=analysis_csv_path,
+        database_path=database_path,
+        column_names=column_names,
+        selected_columns=selected_columns,
+        missing_markers_by_column=missing_markers_by_column,
+    )
+
+
+def data_analysis_rows_request_error(
+    error: DataAnalysisNotSucceededError | DataAnalysisTargetNotFoundError,
+    job_id: str,
+) -> HTTPException:
+    if isinstance(error, DataAnalysisNotSucceededError):
+        return HTTPException(
+            status_code=409,
+            detail="Data rows are available only after the analysis succeeds.",
+        )
+
+    return HTTPException(
+        status_code=404,
+        detail=f"The requested result is not available for data analysis job {job_id!r}.",
+    )
 
 
 def require_supported_file(file: UploadFile) -> None:
@@ -461,6 +637,85 @@ def analysis_job_status_response(job: AnalysisJob) -> dict[str, object]:
         "progress": progress,
         "result": result,
         "error": status.error,
+    }
+
+
+def data_analysis_job_status_response(job: DataAnalysisJob) -> dict[str, object]:
+    status = job.status_snapshot()
+
+    if status.progress is None:
+        progress = None
+    else:
+        progress = {
+            "items_done": status.progress.items_done,
+            "items_total": status.progress.items_total,
+        }
+
+    result = None
+    if isinstance(status.result, FormalTermsSummary):
+        result = formal_terms_summary_response(status.result)
+    elif isinstance(status.result, GroupDataSummary):
+        result = group_data_summary_response(status.result)
+
+    return {
+        "job_id": status.job_id,
+        "analysis_kind": status.analysis_kind,
+        "state": status.state,
+        "stage": status.stage,
+        "elapsed_seconds": status.elapsed_seconds,
+        "progress": progress,
+        "result": result,
+        "error": status.error,
+    }
+
+
+def formal_terms_summary_response(summary: FormalTermsSummary) -> dict[str, object]:
+    columns = []
+    for column in summary.columns:
+        columns.append(
+            {
+                "name": column.name,
+                "terms": [
+                    {
+                        "value": term.value,
+                        "count": term.count,
+                        "share": term.share,
+                    }
+                    for term in column.terms
+                ],
+                "format_patterns": [
+                    {
+                        "pattern": pattern.pattern,
+                        "occurrence_count": pattern.occurrence_count,
+                        "distinct_term_count": pattern.distinct_term_count,
+                        "share": pattern.share,
+                    }
+                    for pattern in column.format_patterns
+                ],
+            }
+        )
+
+    return {
+        "kind": FORMAL_TERMS_KIND,
+        "input_rows": summary.input_rows,
+        "selected_columns": list(summary.selected_columns),
+        "columns": columns,
+    }
+
+
+def group_data_summary_response(summary: GroupDataSummary) -> dict[str, object]:
+    return {
+        "kind": GROUP_DATA_KIND,
+        "input_rows": summary.input_rows,
+        "selected_columns": list(summary.selected_columns),
+        "groups": [
+            {
+                "values": list(group.values),
+                "count": group.count,
+                "share": group.share,
+            }
+            for group in summary.groups
+        ],
     }
 
 

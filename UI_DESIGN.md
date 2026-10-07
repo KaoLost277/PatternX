@@ -32,3 +32,24 @@ Apply these rules whenever creating or changing user-facing UI, styles, or UI-re
 
 - Use a consistent z-index hierarchy: base content `0`, sticky navigation `10`, dropdowns `20`, modals `50`, and toasts or snackbars `100`.
 - Keep z-index values within this hierarchy; do not introduce arbitrary or extreme values.
+
+## 6. Interaction & Action Hierarchy
+- Establish a clear hierarchy for actions: exactly one Primary action per section/modal, distinct Secondary actions, and visually separated Destructive actions.
+- Provide clear visual affordances for interactive elements (hover, focus, active, disabled states).
+- Ensure all interactive touch/click targets meet minimum ergonomic sizes (at least 40x40px).
+
+## 7. System Feedback & Status
+- Every asynchronous action must have a visual feedback loop: loading spinners/skeletons during fetching, disabled button states during submission to prevent double-clicks, and clear success/error toasts or banners.
+- When an error occurs, provide human-readable inline messages stating what went wrong and how to fix it—never leave the user guessing.
+
+## 8. Form Ergonomics & Data Entry
+- Always pair input fields with persistent, explicit <label> tags (never rely solely on placeholders).
+- Group related fields logically and mark required vs. optional fields clearly.
+- Provide sensible defaults, autofocus on the primary field where appropriate, and use proper HTML input types (e.g., email, number, tel) to trigger correct mobile keyboards.
+
+## 9. State Completeness (The 4 States Rule)
+Whenever generating or updating a component/view, explicitly account for all 4 states:
+- Default/Populated: Normal data view.
+- Loading/Skeleton: Data fetching state.
+- Empty State: When no data exists, provide a friendly message and a clear call-to-action (e.g., "No items found. Create your first item").
+- Error/Broken State: Clear explanation with a retry mechanism.

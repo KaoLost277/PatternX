@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test:safety": "node --test --test-concurrency=1 tests/hostile-render.test.mjs tests/benchmark-limits.test.mjs tests/pattern-details.test.mjs",
+    "test:safety": "node --test --test-concurrency=1 tests/hostile-render.test.mjs tests/benchmark-limits.test.mjs tests/collapsible-section.test.mjs tests/table-sorting.test.mjs tests/pattern-details.test.mjs tests/data-analysis.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { after, test } from "node:test";
@@ -9,6 +10,11 @@ const viteServer = await createServer({
   server: { middlewareMode: true, hmr: false },
   appType: "custom",
 });
+
+const patternRowsDialogStyles = readFileSync(
+  new URL("../src/PatternRowsDialog.css", import.meta.url),
+  "utf8",
+);
 
 after(async () => {
   await viteServer.close();
@@ -100,6 +106,21 @@ test("the populated View rows panel contains a semantic table of every returned 
   assert.ok(markup.indexOf("record_id") < firstHostileHeaderPosition);
   assert.ok(firstHostileHeaderPosition < markup.indexOf("unselected_source_column"));
   assert.ok(markup.indexOf("&lt;img") < markup.indexOf("second row"));
+});
+
+test("the row details table keeps source columns readable and scrolls horizontally", () => {
+  assert.match(
+    patternRowsDialogStyles,
+    /\.pattern-rows-dialog \.preview-table-frame\s*\{[^}]*overflow:\s*auto;/s,
+  );
+  assert.match(
+    patternRowsDialogStyles,
+    /\.pattern-rows-table\s*\{[^}]*width:\s*auto;[^}]*min-width:\s*100%;/s,
+  );
+  assert.match(
+    patternRowsDialogStyles,
+    /\.pattern-rows-table th,\s*\.pattern-rows-table td\s*\{[^}]*min-width:\s*8rem;/s,
+  );
 });
 
 test("pattern row requests use the job and canonical pattern index with the selected page", async () => {

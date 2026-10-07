@@ -1,30 +1,68 @@
 :root {
+  --color-page: #f6f7f8;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8f9fa;
+  --color-surface-accent: #edf4f8;
+  --color-text: #2e3438;
+  --color-text-secondary: #4b5963;
+  --color-text-muted: #707d86;
+  --color-border: #e3e8ed;
+  --color-border-strong: #c5cdd5;
+  --color-accent: #39749a;
+  --color-accent-hover: #2d617f;
+  --shadow-card: 0 1px 3px rgba(35, 45, 55, 0.06);
+  --shadow-dialog: 0 8px 24px rgba(15, 23, 42, 0.12);
+
   color-scheme: light;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
   line-height: 1.5;
-  color: #1e293b;
-  background-color: #f8fafc;
+  color: var(--color-text);
+  background-color: var(--color-page);
+  accent-color: var(--color-accent);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
 }
 
 h1,
-h2 {
+h2,
+h3 {
   line-height: 1.25;
-  color: #0f172a;
+  color: var(--color-text);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: clamp(1.75rem, 2.6vw, 2rem);
   font-weight: 650;
+  letter-spacing: -0.035em;
 }
 
 h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.2rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  margin: 0;
+  font-size: 1rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }

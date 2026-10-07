@@ -1,6 +1,6 @@
 # Data Completeness Profiling
 
-This project identifies recurring completeness patterns in tabular data by evaluating whether selected fields contain values for each input row.
+This project profiles tabular data through three separate views: completeness patterns, formal terms in selected columns, and groups of input rows that share selected values.
 
 ## Language
 
@@ -14,6 +14,21 @@ _Avoid_: Entity Key
 
 **Completeness Pattern**:
 The combination of present and missing statuses across selected columns for one input row. Input rows with the same pattern can be reported together.
+
+**Formal Term**:
+One distinct raw value in a selected column. Repeated occurrences contribute to the term's count; non-missing values remain distinct when their text differs, including by letter case or surrounding whitespace.
+
+**Structural Format Pattern**:
+A repeated form shared by distinct Formal Terms in one column. Literal text, separators, and the widths of digit runs distinguish one format from another. Ordinary word values are not treated as structural formats.
+
+**Formal Terms Summary**:
+A per-column report of distinct Formal Terms and their counts, plus repeated Structural Format Patterns and their occurrence and distinct-term counts.
+
+**Group Data Key**:
+The ordered combination of values from the selected columns for one Input Row. Missing Values use one shared missing key; other values are compared as their original text.
+
+**Group Data Summary**:
+A report that groups Input Rows with the same Group Data Key, showing exact counts and shares. It includes only value combinations observed in the input data.
 
 **Completeness Summary**:
 A descriptive report that groups input rows by completeness pattern and shows each group's count and share. It does not label a pattern as anomalous.
