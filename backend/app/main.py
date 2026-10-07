@@ -1,12 +1,17 @@
 import sqlite3
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Query, Response, UploadFile
+from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from app.analysis_jobs import (
     HIGH_CARDINALITY_COLUMN_THRESHOLD,
+    AnalysisNotSucceededError,
     AnalysisJob,
     AnalysisJobStore,
+    PatternIndexNotFoundError,
     new_job_id,
 )
 from app.completeness import (
@@ -23,6 +28,7 @@ from app.exports import (
     COLUMN_COMPLETENESS_EXPORT_NAME,
     PATTERN_SUMMARY_EXPORT_NAME,
     column_completeness_csv,
+    iter_csv_text,
     pattern_summary_csv,
 )
 from app.patterns import (
@@ -71,7 +77,18 @@ def create_application(
 ) -> FastAPI:
     prepare_work_directory(work_directory)
     job_store = AnalysisJobStore()
-    application = FastAPI(title="PatternX Data Completeness Profiler")
+
+    @asynccontextmanager
+    async def application_lifespan(_application: FastAPI):
+        try:
+            yield
+        finally:
+            job_store.shutdown()
+
+    application = FastAPI(
+        title="PatternX Data Completeness Profiler",
+        lifespan=application_lifespan,
+    )
 
     @application.post("/api/imports")
     async def import_file(
@@ -193,6 +210,58 @@ def create_application(
     @application.get("/api/analysis-jobs/{job_id}")
     async def get_analysis_job(job_id: str) -> dict[str, object]:
         return analysis_job_status_response(find_job_or_raise(job_id))
+
+    @application.get("/api/analysis-jobs/{job_id}/patterns/{pattern_index}/rows")
+    async def get_pattern_rows(
+        job_id: str,
+        pattern_index: int,
+        page: int = Query(default=1, ge=1),
+    ) -> dict[str, object]:
+        job = find_job_or_raise(job_id)
+        try:
+            return job.pattern_rows_page(pattern_index, page)
+        except AnalysisNotSucceededError as error:
+            raise HTTPException(
+                status_code=409,
+                detail="Pattern rows are available only after the analysis succeeds.",
+            ) from error
+        except PatternIndexNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"There is no Completeness Pattern at index {pattern_index} "
+                    f"for analysis job {job_id!r}."
+                ),
+            ) from error
+
+    @application.get(
+        "/api/analysis-jobs/{job_id}/patterns/{pattern_index}/exports/rows.csv"
+    )
+    async def download_pattern_rows_export(job_id: str, pattern_index: int) -> Response:
+        job = find_job_or_raise(job_id)
+        try:
+            columns, matching_rows = job.open_pattern_rows_export(pattern_index)
+        except AnalysisNotSucceededError as error:
+            raise HTTPException(
+                status_code=409,
+                detail="Pattern rows are available only after the analysis succeeds.",
+            ) from error
+        except PatternIndexNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"There is no Completeness Pattern at index {pattern_index} "
+                    f"for analysis job {job_id!r}."
+                ),
+            ) from error
+
+        export_name = f"pattern_rows_{pattern_index + 1}.csv"
+        return StreamingResponse(
+            iter_csv_text(columns, matching_rows),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{export_name}"'},
+            background=BackgroundTask(matching_rows.close),
+        )
 
     @application.get("/api/analysis-jobs/{job_id}/exports/column_completeness.csv")
     async def download_column_completeness_export(job_id: str) -> Response:

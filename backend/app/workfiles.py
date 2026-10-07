@@ -11,7 +11,12 @@ def default_work_directory() -> Path:
 
 
 def prepare_work_directory(work_directory: Path) -> None:
-    uploads_directory(work_directory).mkdir(parents=True, exist_ok=True)
+    uploads_path = uploads_directory(work_directory)
+    uploads_path.mkdir(parents=True, exist_ok=True)
+    for temporary_directory in uploads_path.iterdir():
+        is_temporary_upload = temporary_directory.name.startswith(("job-", "request-"))
+        if is_temporary_upload and temporary_directory.is_dir():
+            shutil.rmtree(temporary_directory)
 
 
 def uploads_directory(work_directory: Path) -> Path:
@@ -51,4 +56,17 @@ def new_job_directory(work_directory: Path, job_id: str) -> Path:
 
 def clean_up_job(job_directory: Path) -> None:
     """Remove everything one analysis job left behind, on every outcome."""
-    shutil.rmtree(job_directory)
+    if job_directory.exists():
+        shutil.rmtree(job_directory)
+
+
+def clean_up_job_sources(job_directory: Path) -> None:
+    """Remove uploads and normalized source copies, retaining the staged database."""
+    database_path = analysis_database_path(job_directory)
+    for working_path in job_directory.iterdir():
+        if working_path == database_path:
+            continue
+        if working_path.is_dir():
+            shutil.rmtree(working_path)
+        else:
+            working_path.unlink()

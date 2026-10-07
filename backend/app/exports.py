@@ -1,14 +1,16 @@
-"""CSV downloads of the summary results.
+"""CSV downloads for summary results and selected-pattern row details.
 
-Both exports carry summary counts and shares only: never raw Input Rows, never
-row-level details. File-derived values such as column names are written as inert
-text — every value keeps its own CSV field under CSV quoting rules, and a value a
-spreadsheet could read as a formula is prefixed with an apostrophe so it stays
-text when the file is opened.
+The column-completeness and pattern-summary exports carry aggregate counts and
+shares only. The selected-pattern export is a separate streamed download of its
+matching Input Rows. File-derived values such as column names and cell text are
+written as inert text — every value keeps its own CSV field under CSV quoting
+rules, and a value a spreadsheet could read as a formula is prefixed with an
+apostrophe so it stays text when the file is opened.
 """
 
 import csv
 import io
+from collections.abc import Iterable, Iterator, Sequence
 
 from app.completeness import ColumnCompletenessSummary
 from app.patterns import PatternSummary
@@ -20,6 +22,8 @@ PATTERN_SUMMARY_EXPORT_NAME = "pattern_summary.csv"
 # precision — the shortest decimal that reads back as the same number — so an
 # export never rounds the reported share away.
 SPREADSHEET_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+# Bound response buffering without making one ASGI chunk for every Input Row.
+CSV_STREAM_CHUNK_CHARACTERS = 64 * 1024
 
 
 def column_completeness_csv(summary: ColumnCompletenessSummary) -> str:
@@ -73,6 +77,33 @@ def build_csv_text(header_row: list[str], data_rows: list[list[str]]) -> str:
     writer.writerow(header_row)
     writer.writerows(data_rows)
     return output.getvalue()
+
+
+def iter_csv_text(
+    header_row: Sequence[str],
+    data_rows: Iterable[Sequence[str | None]],
+) -> Iterator[str]:
+    """Stream CSV records while applying the same quoting and inert-text rules."""
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\r\n")
+    writer.writerow([inert_cell_text(value) for value in header_row])
+    yield "\ufeff" + output.getvalue()
+    output.seek(0)
+    output.truncate(0)
+
+    for data_row in data_rows:
+        inert_data_row = [
+            "" if value is None else inert_cell_text(value)
+            for value in data_row
+        ]
+        writer.writerow(inert_data_row)
+        if output.tell() >= CSV_STREAM_CHUNK_CHARACTERS:
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+    if output.tell() > 0:
+        yield output.getvalue()
 
 
 def format_export_share(share: float) -> str:

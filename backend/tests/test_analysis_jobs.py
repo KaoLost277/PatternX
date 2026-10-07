@@ -147,6 +147,9 @@ def test_cancelling_a_running_analysis_stops_the_work_and_cleans_up(tmp_path):
     status = await_analysis_job(test_client, job_id)
     assert status["state"] == "cancelled"
     assert status["result"] is None
+    rows_response = test_client.get(f"/api/analysis-jobs/{job_id}/patterns/0/rows")
+    assert rows_response.status_code == 409
+    assert "succeeds" in rows_response.json()["detail"]
     assert_no_working_files_left(work_directory)
 
 
@@ -208,7 +211,7 @@ def test_analysis_upload_setup_failure_cleans_up_partial_files(tmp_path, monkeyp
     assert_no_working_files_left(work_directory)
 
 
-def test_successful_analysis_leaves_no_working_files_behind(tmp_path):
+def test_successful_analysis_retains_only_its_staged_database(tmp_path):
     work_directory = tmp_path / "work"
     test_client = make_test_client(work_directory)
 
@@ -216,7 +219,8 @@ def test_successful_analysis_leaves_no_working_files_behind(tmp_path):
     status = await_analysis_job(test_client, job_id)
 
     assert status["state"] == "succeeded"
-    assert_no_working_files_left(work_directory)
+    job_directory = work_directory / "uploads" / f"job-{job_id}"
+    assert [path.name for path in job_directory.iterdir()] == ["analysis.sqlite3"]
 
 
 def test_starting_a_new_analysis_job_replaces_the_previous_job():

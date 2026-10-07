@@ -1,9 +1,10 @@
 """Background analysis jobs with progress reporting and cancellation.
 
-One analysis runs on its own worker thread with its own working directory: the
-raw file, the normalized worksheet copy, and its SQLite database live inside
-that directory and are deleted when the job reaches any final state —
-success, failure, or cancellation.
+One analysis runs on its own worker thread with its own working directory. The
+raw file and normalized worksheet copy are deleted at every final state. The
+SQLite database is also deleted after failure or cancellation, but remains
+temporarily available after success until the job is replaced or the backend
+shuts down.
 
 Only the most recent job is kept. Starting a new analysis cancels and forgets
 the previous one, so results of an earlier import can never survive into a
@@ -14,17 +15,22 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.completeness import (
     UNREADABLE_CSV_MESSAGE,
     ColumnCompletenessSummary,
+    presence_function_name,
+    register_presence_functions,
     summarize_column_completeness,
+    sqlite_column_name,
 )
 from app.patterns import (
     AnalysisCancelledError,
     AnalysisInputs,
+    PRESENT_STATUS,
     PatternSummary,
     compute_pattern_summary,
 )
@@ -34,7 +40,7 @@ from app.sqlite_storage import (
     load_csv_into_database,
     open_analysis_database,
 )
-from app.workfiles import clean_up_job
+from app.workfiles import clean_up_job, clean_up_job_sources
 
 JOB_STATE_RUNNING = "running"
 JOB_STATE_SUCCEEDED = "succeeded"
@@ -52,6 +58,16 @@ STAGE_GROUPING_INPUT_ROWS = "Grouping Input Rows by Completeness Pattern"
 HIGH_CARDINALITY_COLUMN_THRESHOLD = 20
 
 CANCEL_WAIT_SECONDS = 5.0
+PATTERN_ROWS_PAGE_SIZE = 50
+PATTERN_ROWS_EXPORT_BATCH_SIZE = 1_000
+
+
+class AnalysisNotSucceededError(Exception):
+    """Raised when row details are requested before successful completion."""
+
+
+class PatternIndexNotFoundError(Exception):
+    """Raised when a requested index is outside the job's canonical pattern list."""
 
 
 @dataclass(frozen=True)
@@ -81,6 +97,56 @@ class AnalysisJobStatus:
     progress: AnalysisProgress | None
     result: AnalysisJobResult | None
     error: str | None
+
+
+class PatternRowsExportRows(Iterator[tuple[str | None, ...]]):
+    """Read matching source rows in bounded batches and release the job lease."""
+
+    def __init__(
+        self,
+        cursor: sqlite3.Cursor,
+        connection: sqlite3.Connection,
+        job_lock: threading.Lock,
+    ):
+        self._cursor = cursor
+        self._connection = connection
+        self._job_lock = job_lock
+        self._batch_rows: list[tuple[str | None, ...]] = []
+        self._next_row_index = 0
+        self._closed = False
+
+    def __iter__(self) -> "PatternRowsExportRows":
+        return self
+
+    def __next__(self) -> tuple[str | None, ...]:
+        if self._closed:
+            raise StopIteration
+
+        if self._next_row_index == len(self._batch_rows):
+            try:
+                self._batch_rows = self._cursor.fetchmany(PATTERN_ROWS_EXPORT_BATCH_SIZE)
+            except BaseException:
+                self.close()
+                raise
+            self._next_row_index = 0
+
+        if not self._batch_rows:
+            self.close()
+            raise StopIteration
+
+        row = self._batch_rows[self._next_row_index]
+        self._next_row_index += 1
+        return row
+
+    def close(self) -> None:
+        if self._closed:
+            return
+
+        self._closed = True
+        try:
+            self._connection.close()
+        finally:
+            self._job_lock.release()
 
 
 class AnalysisJob:
@@ -128,8 +194,126 @@ class AnalysisJob:
                 # notices the cancel flag between batches.
                 self._connection.interrupt()
 
-    def wait_until_stopped(self) -> None:
-        self._worker.join(CANCEL_WAIT_SECONDS)
+    def wait_until_stopped(self, timeout: float | None = CANCEL_WAIT_SECONDS) -> bool:
+        self._worker.join(timeout)
+        return not self._worker.is_alive()
+
+    def clean_up_retained_data(self) -> None:
+        """Remove the retained row database when this job is no longer current."""
+        with self._lock:
+            clean_up_job(self.job_directory)
+
+    def pattern_rows_page(self, pattern_index: int, page: int) -> dict[str, object]:
+        """Read one source-ordered page matching a completed summary pattern."""
+        with self._lock:
+            if self.state != JOB_STATE_SUCCEEDED or self.result is None:
+                raise AnalysisNotSucceededError()
+
+            patterns = self.result.pattern_summary.patterns
+            if pattern_index < 0 or pattern_index >= len(patterns):
+                raise PatternIndexNotFoundError()
+
+            pattern = patterns[pattern_index]
+            offset = (page - 1) * PATTERN_ROWS_PAGE_SIZE
+            rows = []
+            if offset < pattern.count:
+                database_uri = self.analysis_inputs.database_path.resolve().as_uri() + "?mode=ro"
+                connection = sqlite3.connect(database_uri, uri=True)
+                try:
+                    register_presence_functions(
+                        connection,
+                        self.analysis_inputs.column_names,
+                        self.analysis_inputs.missing_markers_by_column,
+                    )
+                    source_columns = [
+                        sqlite_column_name(column_index)
+                        for column_index in range(len(self.analysis_inputs.column_names))
+                    ]
+                    status_conditions = []
+                    for column_name in self.result.pattern_summary.analysis_columns:
+                        column_index = self.analysis_inputs.column_names.index(column_name)
+                        status_function = presence_function_name(column_index)
+                        status_conditions.append(
+                            f"{status_function}({sqlite_column_name(column_index)}) = ?"
+                        )
+
+                    query = (
+                        f'SELECT {", ".join(source_columns)} FROM "input_rows" '
+                        f'WHERE {" AND ".join(status_conditions)} '
+                        f'ORDER BY rowid ASC LIMIT ? OFFSET ?'
+                    )
+                    expected_status_values = [
+                        int(status == PRESENT_STATUS) for status in pattern.statuses
+                    ]
+                    rows = connection.execute(
+                        query,
+                        [*expected_status_values, PATTERN_ROWS_PAGE_SIZE, offset],
+                    ).fetchall()
+                finally:
+                    connection.close()
+
+            return {
+                "columns": list(self.analysis_inputs.column_names),
+                "rows": [list(row) for row in rows],
+                "page": page,
+                "page_size": PATTERN_ROWS_PAGE_SIZE,
+                "total_rows": pattern.count,
+            }
+
+    def open_pattern_rows_export(
+        self,
+        pattern_index: int,
+    ) -> tuple[list[str], PatternRowsExportRows]:
+        """Open a streamed source-ordered export for one completed pattern."""
+        self._lock.acquire()
+        connection: sqlite3.Connection | None = None
+        try:
+            if self.state != JOB_STATE_SUCCEEDED or self.result is None:
+                raise AnalysisNotSucceededError()
+
+            patterns = self.result.pattern_summary.patterns
+            if pattern_index < 0 or pattern_index >= len(patterns):
+                raise PatternIndexNotFoundError()
+
+            pattern = patterns[pattern_index]
+            database_uri = self.analysis_inputs.database_path.resolve().as_uri() + "?mode=ro"
+            connection = sqlite3.connect(database_uri, uri=True, check_same_thread=False)
+            register_presence_functions(
+                connection,
+                self.analysis_inputs.column_names,
+                self.analysis_inputs.missing_markers_by_column,
+            )
+
+            source_columns = [
+                sqlite_column_name(column_index)
+                for column_index in range(len(self.analysis_inputs.column_names))
+            ]
+            status_conditions = []
+            for column_name in self.result.pattern_summary.analysis_columns:
+                column_index = self.analysis_inputs.column_names.index(column_name)
+                status_function = presence_function_name(column_index)
+                status_conditions.append(
+                    f"{status_function}({sqlite_column_name(column_index)}) = ?"
+                )
+
+            query = (
+                f'SELECT {", ".join(source_columns)} FROM "input_rows" '
+                f'WHERE {" AND ".join(status_conditions)} '
+                "ORDER BY rowid ASC"
+            )
+            expected_status_values = [
+                int(status == PRESENT_STATUS) for status in pattern.statuses
+            ]
+            cursor = connection.execute(query, expected_status_values)
+            rows = PatternRowsExportRows(cursor, connection, self._lock)
+            return list(self.analysis_inputs.column_names), rows
+        except BaseException:
+            try:
+                if connection is not None:
+                    connection.close()
+            finally:
+                self._lock.release()
+            raise
 
     def is_cancel_requested(self) -> bool:
         return self._cancel_requested.is_set()
@@ -226,14 +410,19 @@ class AnalysisJob:
                         final_state = JOB_STATE_FAILED
                         result = None
                         error = "The analysis database could not be closed cleanly."
-            # The raw file and all working data are gone after every outcome,
-            # and only then is the final state reported: a job that can be seen
-            # as finished has nothing left on disk.
+            # Only the staged database survives a successful job; the raw file
+            # and normalized worksheet copy are removed before success is visible.
             try:
-                clean_up_job(self.job_directory)
+                if final_state == JOB_STATE_SUCCEEDED:
+                    clean_up_job_sources(self.job_directory)
+                else:
+                    clean_up_job(self.job_directory)
             except OSError:
-                # Never report a finished analysis while its raw or working
-                # files may still be present on disk.
+                # A failed cleanup must not leave row-level data available.
+                try:
+                    clean_up_job(self.job_directory)
+                except OSError:
+                    pass
                 final_state = JOB_STATE_FAILED
                 result = None
                 error = "Temporary working files could not be removed."
@@ -261,7 +450,9 @@ class AnalysisJobStore:
 
         for previous_job in previous_jobs:
             previous_job.request_cancel()
-            previous_job.wait_until_stopped()
+        for previous_job in previous_jobs:
+            if previous_job.wait_until_stopped():
+                previous_job.clean_up_retained_data()
 
         job.start()
         with self._lock:
@@ -278,6 +469,18 @@ class AnalysisJobStore:
             job.request_cancel()
             job.wait_until_stopped()
         return job
+
+    def shutdown(self) -> None:
+        """Stop the current worker and remove any data retained for row details."""
+        with self._lock:
+            current_jobs = list(self._jobs.values())
+            self._jobs.clear()
+
+        for job in current_jobs:
+            job.request_cancel()
+        for job in current_jobs:
+            job.wait_until_stopped(timeout=None)
+            job.clean_up_retained_data()
 
 
 def new_job_id() -> str:

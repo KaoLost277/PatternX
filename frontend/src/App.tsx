@@ -1,8 +1,15 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import "./App.css";
-import { PatternPreview, PatternStatusLabel } from "./PatternPreview";
+import { PatternStatusLabel } from "./PatternPreview";
 import type { CompletenessPattern, PatternSummary } from "./PatternPreview";
+import { PatternRowsDialog } from "./PatternRowsDialog";
+import {
+  downloadPatternRowsCsv,
+  fetchPatternRowsPage,
+  PatternRowsRequestError,
+} from "./patternRows";
+import type { PatternRowsPage } from "./patternRows";
 import {
   csvExceedsBenchmarkSize,
   MAX_BENCHMARKED_FILE_SIZE_MIB,
@@ -177,9 +184,6 @@ const HIGH_CARDINALITY_COLUMN_THRESHOLD = 20;
 
 const JOB_POLL_INTERVAL_MILLISECONDS = 500;
 
-// The pattern table shows one column per analyzed column plus Input Rows,
-// Share of Input Rows, and Sample rows.
-const PATTERN_SUMMARY_EXTRA_COLUMNS = 3;
 
 function withoutIdentifierColumn(
   analysisColumns: string[],
@@ -259,6 +263,13 @@ function App() {
   const [highCardinalityAcknowledged, setHighCardinalityAcknowledged] = useState<boolean>(false);
   const [patternStatusFilters, setPatternStatusFilters] = useState<Record<string, string>>({});
   const [selectedPatternIndex, setSelectedPatternIndex] = useState<number | null>(null);
+  const [selectedPatternPage, setSelectedPatternPage] = useState<number>(1);
+  const [patternRowsPage, setPatternRowsPage] = useState<PatternRowsPage | null>(null);
+  const [patternRowsLoading, setPatternRowsLoading] = useState<boolean>(false);
+  const [patternRowsError, setPatternRowsError] = useState<string | null>(null);
+  const [patternRowsRetryNumber, setPatternRowsRetryNumber] = useState<number>(0);
+  const [patternRowsExportLoading, setPatternRowsExportLoading] = useState<boolean>(false);
+  const [patternRowsExportError, setPatternRowsExportError] = useState<string | null>(null);
   const [showAllPatterns, setShowAllPatterns] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -309,11 +320,19 @@ function App() {
     }
   }
 
-  function resetPatternViewState() {
-    // What patterns are displayed decides which rows exist to click, so a
-    // changed view closes any open preview and starts from the most common
-    // patterns again.
+  function clearPatternDetails() {
     setSelectedPatternIndex(null);
+    setSelectedPatternPage(1);
+    setPatternRowsPage(null);
+    setPatternRowsLoading(false);
+    setPatternRowsError(null);
+    setPatternRowsExportLoading(false);
+    setPatternRowsExportError(null);
+  }
+
+  function resetPatternViewState() {
+    // The displayed pattern view determines which Input Rows are available.
+    clearPatternDetails();
     setShowAllPatterns(false);
   }
 
@@ -542,17 +561,59 @@ function App() {
   }
 
   function handleShowAllPatternsToggled() {
-    setSelectedPatternIndex(null);
+    clearPatternDetails();
     setShowAllPatterns((previousShowAll) => !previousShowAll);
   }
 
-  function handlePatternPreviewToggled(patternIndex: number) {
-    // Clicking the open pattern again closes its preview.
-    if (selectedPatternIndex === patternIndex) {
-      setSelectedPatternIndex(null);
+  function handlePatternPreviewOpened(patternIndex: number) {
+    setSelectedPatternPage(1);
+    setPatternRowsPage(null);
+    setPatternRowsLoading(true);
+    setPatternRowsError(null);
+    setPatternRowsExportLoading(false);
+    setPatternRowsExportError(null);
+    setSelectedPatternIndex(patternIndex);
+  }
+
+  function handlePatternPreviewClosed() {
+    clearPatternDetails();
+  }
+
+  function handlePatternRowsPageChanged(page: number) {
+    setSelectedPatternPage(page);
+    setPatternRowsPage(null);
+    setPatternRowsLoading(true);
+    setPatternRowsError(null);
+  }
+
+  function handlePatternRowsRetry() {
+    setPatternRowsRetryNumber((previousRetryNumber) => previousRetryNumber + 1);
+    setPatternRowsPage(null);
+    setPatternRowsLoading(true);
+    setPatternRowsError(null);
+  }
+
+  async function handlePatternRowsExport() {
+    if (analysisJob === null || selectedPatternIndex === null) {
+      setPatternRowsExportError(
+        "The analysis job is no longer available. Run the analysis again to export these rows.",
+      );
       return;
     }
-    setSelectedPatternIndex(patternIndex);
+
+    setPatternRowsExportLoading(true);
+    setPatternRowsExportError(null);
+    try {
+      await downloadPatternRowsCsv(analysisJob.job_id, selectedPatternIndex);
+    } catch (error: unknown) {
+      setPatternRowsExportError(
+        error instanceof PatternRowsRequestError
+          ? error.message
+          : "The CSV could not be downloaded. Check that the local API is running and retry.",
+      );
+    } finally {
+      setPatternRowsExportLoading(false);
+    }
   }
 
   // While an analysis runs, keep reading its status so the user sees progress
@@ -561,6 +622,14 @@ function App() {
   // the polling itself.
   const runningAnalysisJobId = analysisJob?.job_id ?? null;
   const analysisRunning = analysisJob !== null && analysisJob.state === JOB_STATE_RUNNING;
+  const selectedJobId = analysisJob?.job_id ?? null;
+  const selectedPattern =
+    selectedPatternIndex !== null ? (patternSummary?.patterns[selectedPatternIndex] ?? null) : null;
+  const patternRowsDisplayError =
+    selectedPatternIndex !== null && selectedJobId === null
+      ? "The analysis job is no longer available. Run the analysis again to view its Input Rows."
+      : patternRowsError;
+  const patternRowsDisplayLoading = selectedJobId !== null && patternRowsLoading;
 
   useEffect(() => {
     if (runningAnalysisJobId === null || !analysisRunning) {
@@ -579,6 +648,42 @@ function App() {
 
     return () => window.clearInterval(pollTimer);
   }, [runningAnalysisJobId, analysisRunning]);
+
+  useEffect(() => {
+    if (selectedPatternIndex === null || selectedPattern === null || selectedJobId === null) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void fetchPatternRowsPage(
+      selectedJobId,
+      selectedPatternIndex,
+      selectedPatternPage,
+      controller.signal,
+    )
+      .then((rowsPage) => {
+        if (!controller.signal.aborted) {
+          setPatternRowsPage(rowsPage);
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setPatternRowsError(
+          error instanceof PatternRowsRequestError
+            ? error.message
+            : "The local API could not retrieve these Input Rows. Check that it is running and retry.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setPatternRowsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [selectedJobId, selectedPatternIndex, selectedPatternPage, patternRowsRetryNumber]);
 
   const columnsToAnalyze = withoutIdentifierColumn(analysisColumns, identifierColumn);
   const highCardinalityWarningRequired =
@@ -924,13 +1029,15 @@ function App() {
                         ))}
                         <th scope="col">Input Rows</th>
                         <th scope="col">Share of Input Rows</th>
-                        <th scope="col">Sample rows</th>
+                        <th scope="col">Row details</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedPatterns.map((pattern, patternIndex) => (
-                        <Fragment key={patternIndex}>
-                          <tr>
+                      {displayedPatterns.map((pattern, displayedPatternIndex) => {
+                        const canonicalPatternIndex = patternSummary.patterns.indexOf(pattern);
+
+                        return (
+                          <tr key={canonicalPatternIndex >= 0 ? canonicalPatternIndex : displayedPatternIndex}>
                             {pattern.statuses.map((status, statusIndex) => (
                               <td key={statusIndex}>
                                 <PatternStatusLabel status={status} />
@@ -942,21 +1049,16 @@ function App() {
                               <button
                                 type="button"
                                 className="secondary-button"
-                                onClick={() => handlePatternPreviewToggled(patternIndex)}
+                                aria-haspopup="dialog"
+                                aria-label={`View Input Rows for pattern ${canonicalPatternIndex + 1}`}
+                                onClick={() => handlePatternPreviewOpened(canonicalPatternIndex)}
                               >
-                                {selectedPatternIndex === patternIndex ? "Hide rows" : "Show rows"}
+                                View rows
                               </button>
                             </td>
                           </tr>
-                          {selectedPatternIndex === patternIndex && (
-                            <tr>
-                              <td colSpan={patternSummary.analysis_columns.length + PATTERN_SUMMARY_EXTRA_COLUMNS}>
-                                <PatternPreview patternSummary={patternSummary} pattern={pattern} />
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1002,6 +1104,22 @@ function App() {
               </div>
             )}
           </div>
+        )}
+
+        {patternSummary !== null && selectedPattern !== null && (
+          <PatternRowsDialog
+            patternCount={selectedPattern.count}
+            page={patternRowsPage}
+            requestedPage={selectedPatternPage}
+            loading={patternRowsDisplayLoading}
+            error={patternRowsDisplayError}
+            onPageChange={handlePatternRowsPageChanged}
+            onRetry={handlePatternRowsRetry}
+            exportLoading={patternRowsExportLoading}
+            exportError={patternRowsExportError}
+            onExport={handlePatternRowsExport}
+            onClose={handlePatternPreviewClosed}
+          />
         )}
       </section>
     </main>

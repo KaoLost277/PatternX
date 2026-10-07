@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from app.exports import inert_cell_text
 from app.main import app
 from support import (
-    assert_no_working_files_left,
     make_test_client,
     run_analysis_job,
 )
@@ -62,6 +61,12 @@ def run_export_analysis(test_client, csv_bytes, analysis_columns, file_name="dat
 
 def download_export(test_client, job_id, export_file_name):
     return test_client.get(f"/api/analysis-jobs/{job_id}/exports/{export_file_name}")
+
+
+def download_pattern_rows_export(test_client, job_id, pattern_index):
+    return test_client.get(
+        f"/api/analysis-jobs/{job_id}/patterns/{pattern_index}/exports/rows.csv"
+    )
 
 
 def parse_export_csv(response) -> list[list[str]]:
@@ -247,7 +252,7 @@ def test_exports_of_an_unfinished_analysis_are_refused_with_a_clear_error(tmp_pa
     assert "not-a-job" in missing_job_response.json()["detail"]
 
 
-def test_downloading_exports_leaves_no_working_files_behind(tmp_path):
+def test_downloading_exports_leaves_only_the_retained_database(tmp_path):
     work_directory = tmp_path / "work"
     test_client = make_test_client(work_directory)
     status = run_export_analysis(test_client, EXPORT_FIXTURE, ["email", "phone"])
@@ -255,4 +260,113 @@ def test_downloading_exports_leaves_no_working_files_behind(tmp_path):
     download_export(test_client, status["job_id"], COLUMN_COMPLETENESS_EXPORT_NAME)
     download_export(test_client, status["job_id"], PATTERN_SUMMARY_EXPORT_NAME)
 
-    assert_no_working_files_left(work_directory)
+    job_directory = work_directory / "uploads" / f"job-{status['job_id']}"
+    assert [path.name for path in job_directory.iterdir()] == ["analysis.sqlite3"]
+
+
+def test_pattern_rows_export_includes_all_source_ordered_rows_as_inert_csv():
+    source_rows = []
+    for row_index in range(653):
+        record_id = "=1+1" if row_index == 0 else f"repeated-id-{row_index % 3}"
+        formula_value = " =SUM(A1:A2)" if row_index == 1 else f"value-{row_index}"
+        notes = (
+            'comma, quote " and\na second line'
+            if row_index == 0
+            else f"note-{row_index}-" + ("x" * 120)
+        )
+        source_rows.append([record_id, formula_value, "matched", notes])
+    source_rows.append(["other-pattern", "plain", "", "not exported"])
+
+    source = io.StringIO(newline="")
+    writer = csv.writer(source, lineterminator="\n")
+    writer.writerow(["record_id", "=formula_header", "analysis", "notes"])
+    writer.writerows(source_rows)
+
+    status = run_export_analysis(
+        client,
+        source.getvalue().encode("utf-8"),
+        ["analysis"],
+    )
+    assert status["state"] == "succeeded"
+    matching_pattern_index = next(
+        pattern_index
+        for pattern_index, pattern in enumerate(status["result"]["patterns"])
+        if pattern["statuses"] == ["present"]
+    )
+
+    first_page = client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/{matching_pattern_index}/rows?page=1"
+    )
+    second_page = client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/{matching_pattern_index}/rows?page=2"
+    )
+    last_page = client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/{matching_pattern_index}/rows?page=14"
+    )
+    response = download_pattern_rows_export(client, status["job_id"], matching_pattern_index)
+
+    assert first_page.status_code == 200
+    assert len(first_page.json()["rows"]) == 50
+    assert second_page.status_code == 200
+    assert len(second_page.json()["rows"]) == 50
+    assert last_page.status_code == 200
+    assert last_page.json()["page"] == 14
+    assert len(last_page.json()["rows"]) == 3
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="pattern_rows_{matching_pattern_index + 1}.csv"'
+    )
+
+    exported_text = response.content.decode("utf-8-sig")
+    exported_rows = parse_export_csv(response)
+    assert exported_rows[0] == [
+        "record_id",
+        "'=formula_header",
+        "analysis",
+        "notes",
+    ]
+    assert exported_rows[1:] == [
+        [
+            "'=1+1" if row_index == 0 else f"repeated-id-{row_index % 3}",
+            "' =SUM(A1:A2)" if row_index == 1 else f"value-{row_index}",
+            "matched",
+            'comma, quote " and\na second line'
+            if row_index == 0
+            else f"note-{row_index}-" + ("x" * 120),
+        ]
+        for row_index in range(653)
+    ]
+    assert len(exported_rows) == 654
+    assert '"comma, quote "" and\na second line"' in exported_text
+    assert exported_text.endswith("\r\n")
+
+
+def test_pattern_rows_export_rejects_unknown_job_pattern_and_failed_analysis(tmp_path):
+    work_directory = tmp_path / "work"
+    test_client = make_test_client(work_directory)
+
+    successful_status = run_export_analysis(
+        test_client,
+        EXPORT_FIXTURE,
+        ["email", "phone"],
+    )
+    unknown_job_response = download_pattern_rows_export(test_client, "not-a-job", 0)
+    unknown_pattern_response = download_pattern_rows_export(
+        test_client, successful_status["job_id"], 99
+    )
+
+    failed_status = run_export_analysis(
+        test_client,
+        b"record_id,email\n",
+        ["email"],
+        file_name="header-only.csv",
+    )
+    failed_response = download_pattern_rows_export(test_client, failed_status["job_id"], 0)
+
+    assert unknown_job_response.status_code == 404
+    assert "not-a-job" in unknown_job_response.json()["detail"]
+    assert unknown_pattern_response.status_code == 404
+    assert failed_status["state"] == "failed"
+    assert failed_response.status_code == 409
+    assert "analysis succeeds" in failed_response.json()["detail"]
