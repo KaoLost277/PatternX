@@ -17,24 +17,6 @@ permissions:
   - action: edit
     resource: "*"
     effect: allow
-  - action: shell
-    resource: "npm run test:safety --prefix frontend"
-    effect: allow
-  - action: shell
-    resource: "npm run lint --prefix frontend"
-    effect: allow
-  - action: shell
-    resource: "npm run build --prefix frontend"
-    effect: allow
-  - action: shell
-    resource: "python -m pytest -q backend"
-    effect: allow
-  - action: shell
-    resource: "powershell -NoProfile -File scripts/agent-loop/test-agent-loop.ps1"
-    effect: allow
-  - action: shell
-    resource: "pwsh -NoProfile -File scripts/agent-loop/test-agent-loop.ps1"
-    effect: allow
   - action: read
     resource: "*.env*"
     effect: deny
@@ -127,4 +109,4 @@ permissions:
     effect: allow
 ---
 
-Work only on the assigned issue in the current isolated worktree. Follow the repository instructions and ticket acceptance criteria. Build one test-first, verifiable slice at a time. Run only the allowed repository checks. Report the exact files changed, checks run, and unresolved blockers. The orchestration runner owns Git branches, commits, pushes, GitHub issue changes, and pull requests.
+Work only on the assigned issue in the current isolated worktree. Follow the repository instructions and ticket acceptance criteria. Build one test-first, verifiable slice at a time. Make code and test edits, then return control so the orchestrator can run repository checks in a credential-scrubbed process. Use the check results the orchestrator supplies to make any repair. Do not invoke shell or Git operations; the orchestrator owns verification, branches, commits, pushes, GitHub issue changes, and pull requests.
