@@ -36,20 +36,22 @@ BeforeAll {
         }
     }
 
-    function New-AgentLoopDefaultSelection {
+    function New-AgentLoopDefaultSetupSelection {
         param(
             [string]$Implementer = "openrouter/openai/gpt-6-luna",
             [string]$Repairer = "openrouter/openai/gpt-6-luna",
             [string[]]$Reviewers = @(
                 "openrouter/anthropic/claude-opus-5.5"
                 "openrouter/x-ai/grok-4.7"
-            )
+            ),
+            [string]$ReasoningBudget = "large"
         )
 
         return @{
             Implementer = $Implementer
             Repairer = $Repairer
             Reviewers = $Reviewers
+            ReasoningBudget = $ReasoningBudget
         }
     }
 
@@ -219,13 +221,12 @@ Describe "Invoke-AgentLoopSetup" {
 
     It "revalidates an existing setup without changing its saved model choices" {
         $configurationPath = Join-Path $TestDrive "revalidated-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection
+        $selection = New-AgentLoopDefaultSetupSelection
         $setupAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
 
         Invoke-AgentLoopSetup `
             -ConfigPath $configurationPath `
-            -ModelSelection $selection `
-            -ReasoningBudget "large" `
+            -SetupSelection $selection `
             -CommandAdapter $setupAdapter.Invoke `
             -WorkingDirectory $TestDrive | Out-Null
 
@@ -243,12 +244,11 @@ Describe "Invoke-AgentLoopSetup" {
     It "validates the local tools and writes the selected role models without credentials" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection
+        $selection = New-AgentLoopDefaultSetupSelection
 
         $result = Invoke-AgentLoopSetup `
             -ConfigPath $configurationPath `
-            -ModelSelection $selection `
-            -ReasoningBudget "large" `
+            -SetupSelection $selection `
             -CommandAdapter $fakeCommandAdapter.Invoke `
             -WorkingDirectory $TestDrive
 
@@ -278,13 +278,12 @@ Describe "Invoke-AgentLoopSetup" {
         }
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "read-only-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection
+        $selection = New-AgentLoopDefaultSetupSelection
 
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
@@ -301,13 +300,12 @@ Describe "Invoke-AgentLoopSetup" {
         }
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "missing-write-scope-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection
+        $selection = New-AgentLoopDefaultSetupSelection
 
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*repo*scope*"
@@ -324,13 +322,12 @@ Describe "Invoke-AgentLoopSetup" {
         }
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "unknown-write-scope-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection
+        $selection = New-AgentLoopDefaultSetupSelection
 
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*token scopes*"
@@ -341,15 +338,14 @@ Describe "Invoke-AgentLoopSetup" {
     It "allows distinct reviewer models from the same family" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "same-family-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection -Reviewers @(
+        $selection = New-AgentLoopDefaultSetupSelection -Reviewers @(
             "openrouter/openai/gpt-6-luna"
             "openrouter/openai/gpt-5.4"
         )
 
         $result = Invoke-AgentLoopSetup `
             -ConfigPath $configurationPath `
-            -ModelSelection $selection `
-            -ReasoningBudget "large" `
+            -SetupSelection $selection `
             -CommandAdapter $fakeCommandAdapter.Invoke `
             -WorkingDirectory $TestDrive
 
@@ -361,7 +357,7 @@ Describe "Invoke-AgentLoopSetup" {
     It "rejects using one model ID for both independent reviewer roles" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "duplicate-reviewer-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection -Reviewers @(
+        $selection = New-AgentLoopDefaultSetupSelection -Reviewers @(
             "openrouter/anthropic/claude-opus-5.5"
             "openrouter/anthropic/claude-opus-5.5"
         )
@@ -369,8 +365,7 @@ Describe "Invoke-AgentLoopSetup" {
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
@@ -381,13 +376,12 @@ Describe "Invoke-AgentLoopSetup" {
     It "rejects a model ID that is not enabled in the current OpenCode catalog" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "unavailable-model-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection -Implementer "unavailable/provider-model"
+        $selection = New-AgentLoopDefaultSetupSelection -Implementer "unavailable/provider-model"
 
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw
@@ -398,12 +392,11 @@ Describe "Invoke-AgentLoopSetup" {
     It "uses the model ID as its family when the catalog omits that optional field" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "optional-family-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/microsoft/phi-4"
+        $selection = New-AgentLoopDefaultSetupSelection -Implementer "openrouter/microsoft/phi-4"
 
         $result = Invoke-AgentLoopSetup `
             -ConfigPath $configurationPath `
-            -ModelSelection $selection `
-            -ReasoningBudget "large" `
+            -SetupSelection $selection `
             -CommandAdapter $fakeCommandAdapter.Invoke `
             -WorkingDirectory $TestDrive
 
@@ -420,13 +413,12 @@ Describe "Invoke-AgentLoopSetup" {
         }
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses $responses
         $configurationPath = Join-Path $TestDrive "missing-default-branch-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection
+        $selection = New-AgentLoopDefaultSetupSelection
 
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*default branch*"
@@ -437,13 +429,12 @@ Describe "Invoke-AgentLoopSetup" {
     It "rejects a selected model with no reasoning variants" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "provider-default-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/microsoft/phi-4-mini"
+        $selection = New-AgentLoopDefaultSetupSelection -Implementer "openrouter/microsoft/phi-4-mini"
 
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "large" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*reasoning variant*"
@@ -454,13 +445,12 @@ Describe "Invoke-AgentLoopSetup" {
     It "rejects a reasoning budget that no selected model variant can satisfy" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "unsupported-budget-agent-loop.json"
-        $selection = New-AgentLoopDefaultSelection -Implementer "openrouter/openai/gpt-5.4"
+        $selection = New-AgentLoopDefaultSetupSelection -Implementer "openrouter/openai/gpt-5.4" -ReasoningBudget "small"
 
         {
             Invoke-AgentLoopSetup `
                 -ConfigPath $configurationPath `
-                -ModelSelection $selection `
-                -ReasoningBudget "small" `
+                -SetupSelection $selection `
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*reasoning variant compatible*"

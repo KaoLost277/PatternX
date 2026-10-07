@@ -329,11 +329,9 @@ function Get-AgentLoopInteractiveModelSelection {
     $reasoningBudget = Read-Host "Reasoning budget (small, medium, large, unlimited)"
 
     return @{
-        ModelSelection = @{
-            Implementer = $implementerModel.Trim()
-            Repairer = $repairerModel.Trim()
-            Reviewers = @($firstReviewerModel.Trim(), $secondReviewerModel.Trim())
-        }
+        Implementer = $implementerModel.Trim()
+        Repairer = $repairerModel.Trim()
+        Reviewers = @($firstReviewerModel.Trim(), $secondReviewerModel.Trim())
         ReasoningBudget = $reasoningBudget.Trim().ToLowerInvariant()
     }
 }
@@ -343,10 +341,7 @@ function Invoke-AgentLoopSetup {
     param(
         [string]$ConfigPath = (Get-AgentLoopConfigurationPath),
 
-        [hashtable]$ModelSelection,
-
-        [ValidateSet("small", "medium", "large", "unlimited")]
-        [string]$ReasoningBudget,
+        [hashtable]$SetupSelection,
 
         [Parameter(Mandatory = $true)]
         [scriptblock]$CommandAdapter,
@@ -445,14 +440,18 @@ function Invoke-AgentLoopSetup {
     }
     $githubScopeStatus = "verified"
 
-    if ($null -eq $ModelSelection -or [string]::IsNullOrWhiteSpace($ReasoningBudget)) {
-        $interactiveSelection = Get-AgentLoopInteractiveModelSelection -AvailableModels $availableModels
-        if ($null -eq $ModelSelection) {
-            $ModelSelection = $interactiveSelection.ModelSelection
-        }
-        if ([string]::IsNullOrWhiteSpace($ReasoningBudget)) {
-            $ReasoningBudget = $interactiveSelection.ReasoningBudget
-        }
+    if ($null -eq $SetupSelection) {
+        $SetupSelection = Get-AgentLoopInteractiveModelSelection -AvailableModels $availableModels
+    }
+
+    $ModelSelection = @{
+        Implementer = [string]$SetupSelection.Implementer
+        Repairer = [string]$SetupSelection.Repairer
+        Reviewers = @($SetupSelection.Reviewers)
+    }
+    $ReasoningBudget = [string]$SetupSelection.ReasoningBudget
+    if ($ReasoningBudget -notin @("small", "medium", "large", "unlimited")) {
+        throw "Choose a reasoning budget of small, medium, large, or unlimited."
     }
 
     if (@($ModelSelection.Reviewers).Count -ne 2) {
@@ -569,19 +568,19 @@ function Test-AgentLoopSetupConfiguration {
     $savedConfiguration = ConvertFrom-AgentLoopJson `
         -Json (Get-Content -LiteralPath $ConfigPath -Raw) `
         -ErrorMessage "The saved agent-loop configuration is invalid."
-    $modelSelection = @{
+    $setupSelection = @{
         Implementer = [string]$savedConfiguration.Models.Implementer.Id
         Repairer = [string]$savedConfiguration.Models.Repairer.Id
         Reviewers = @(
             [string]$savedConfiguration.Models.Reviewers[0].Id
             [string]$savedConfiguration.Models.Reviewers[1].Id
         )
+        ReasoningBudget = [string]$savedConfiguration.ReasoningBudget
     }
 
     return Invoke-AgentLoopSetup `
         -ConfigPath $ConfigPath `
-        -ModelSelection $modelSelection `
-        -ReasoningBudget ([string]$savedConfiguration.ReasoningBudget) `
+        -SetupSelection $setupSelection `
         -CommandAdapter $CommandAdapter `
         -WorkingDirectory $WorkingDirectory `
         -ValidateOnly
