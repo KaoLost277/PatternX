@@ -421,6 +421,24 @@ function Invoke-AgentLoopSetup {
         throw "Git did not report the repository root for the current location."
     }
 
+    $canonicalRepositoryRoot = [System.IO.Path]::GetFullPath($gitRoot).TrimEnd([char[]]@("\", "/"))
+    if ([System.IO.Path]::IsPathRooted($ConfigPath)) {
+        $canonicalConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
+    }
+    else {
+        $canonicalConfigPath = [System.IO.Path]::GetFullPath((Join-Path $canonicalRepositoryRoot $ConfigPath))
+    }
+
+    $pathComparison = [System.StringComparison]::Ordinal
+    if ([System.IO.Path]::DirectorySeparatorChar -eq "\") {
+        $pathComparison = [System.StringComparison]::OrdinalIgnoreCase
+    }
+    $repositoryPrefix = $canonicalRepositoryRoot + [System.IO.Path]::DirectorySeparatorChar
+    if ([string]::Equals($canonicalConfigPath, $canonicalRepositoryRoot, $pathComparison) -or
+        $canonicalConfigPath.StartsWith($repositoryPrefix, $pathComparison)) {
+        throw "Personal agent-loop configuration must be stored outside the repository."
+    }
+
     $originResult = Invoke-AgentLoopCommand `
         -CommandAdapter $CommandAdapter `
         -Executable "git" `

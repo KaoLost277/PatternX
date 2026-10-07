@@ -56,6 +56,10 @@ BeforeAll {
     }
 
     function New-AgentLoopSetupResponses {
+        param(
+            [string]$GitRoot = "C:\repo"
+        )
+
         $models = @(
             [pscustomobject]@{
                 providerID = "openrouter"
@@ -207,7 +211,7 @@ BeforeAll {
         return @{
             "git rev-parse --show-toplevel" = [pscustomobject]@{
                 ExitCode = 0
-                StdOut = "C:\repo"
+                StdOut = $GitRoot
                 StdErr = ""
             }
             "git remote get-url origin" = [pscustomobject]@{
@@ -269,6 +273,22 @@ Describe "Invoke-AgentLoopSetup" {
 
         $result.GitHubScopeStatus | Should -Be "verified"
         (Get-Content $configurationPath -Raw) | Should -Be $configurationBeforeValidation
+    }
+
+    It "keeps personal model configuration outside the repository" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses -GitRoot $TestDrive)
+        $configurationPath = Join-Path $TestDrive "agent-loop.json"
+        $setupSelection = New-AgentLoopDefaultSetupSelection
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -SetupSelection $setupSelection `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*outside the repository*"
+
+        (Test-Path $configurationPath) | Should -Be $false
     }
 
     It "validates the local tools and writes the selected role models without credentials" {
