@@ -28,6 +28,7 @@ Import-Module $modulePath -Force
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $ConfigPath = Get-AgentLoopConfigurationPath
 }
+$ConfigPath = Resolve-AgentLoopConfigurationPath -Path $ConfigPath -BaseDirectory $repositoryRoot
 
 $reuseExistingConfiguration = $false
 

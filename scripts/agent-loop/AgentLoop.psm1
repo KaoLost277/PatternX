@@ -56,6 +56,23 @@ function Get-AgentLoopConfigurationPath {
     return Join-Path $configurationDirectory "agent-loop.json"
 }
 
+function Resolve-AgentLoopConfigurationPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [string]$BaseDirectory = (Get-Location).Path
+    )
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return [System.IO.Path]::GetFullPath($Path)
+    }
+
+    $canonicalBaseDirectory = [System.IO.Path]::GetFullPath($BaseDirectory)
+    return [System.IO.Path]::GetFullPath((Join-Path $canonicalBaseDirectory $Path))
+}
+
 function Find-AgentLoopPesterModule {
     param(
         [Parameter(Mandatory = $true)]
@@ -422,12 +439,7 @@ function Invoke-AgentLoopSetup {
     }
 
     $canonicalRepositoryRoot = [System.IO.Path]::GetFullPath($gitRoot).TrimEnd([char[]]@("\", "/"))
-    if ([System.IO.Path]::IsPathRooted($ConfigPath)) {
-        $canonicalConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
-    }
-    else {
-        $canonicalConfigPath = [System.IO.Path]::GetFullPath((Join-Path $canonicalRepositoryRoot $ConfigPath))
-    }
+    $canonicalConfigPath = Resolve-AgentLoopConfigurationPath -Path $ConfigPath -BaseDirectory $WorkingDirectory
 
     $pathComparison = [System.StringComparison]::Ordinal
     if ([System.IO.Path]::DirectorySeparatorChar -eq "\") {
@@ -438,6 +450,7 @@ function Invoke-AgentLoopSetup {
         $canonicalConfigPath.StartsWith($repositoryPrefix, $pathComparison)) {
         throw "Personal agent-loop configuration must be stored outside the repository."
     }
+    $ConfigPath = $canonicalConfigPath
 
     $originResult = Invoke-AgentLoopCommand `
         -CommandAdapter $CommandAdapter `
@@ -659,6 +672,7 @@ function Test-AgentLoopSetupConfiguration {
         [string]$WorkingDirectory = (Get-Location).Path
     )
 
+    $ConfigPath = Resolve-AgentLoopConfigurationPath -Path $ConfigPath -BaseDirectory $WorkingDirectory
     if (-not (Test-Path -LiteralPath $ConfigPath)) {
         throw "No saved agent-loop configuration exists at '$ConfigPath'."
     }
@@ -686,6 +700,7 @@ function Test-AgentLoopSetupConfiguration {
 
 Export-ModuleMember -Function `
     Get-AgentLoopConfigurationPath, `
+    Resolve-AgentLoopConfigurationPath, `
     Get-AgentLoopAvailableModels, `
     Install-AgentLoopPester, `
     Invoke-AgentLoopCommand, `

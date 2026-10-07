@@ -253,6 +253,18 @@ Describe "Invoke-AgentLoopSetup" {
         $configurationPath | Should -Match "PatternX[\\/]agent-loop\.json$"
     }
 
+    It "resolves relative setup paths against the verified worktree" {
+        $repositoryRoot = Join-Path $TestDrive "repo"
+        $workingDirectory = Join-Path $repositoryRoot "subdirectory"
+        $expectedPath = [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot "agent-loop.json"))
+
+        $resolvedPath = Resolve-AgentLoopConfigurationPath `
+            -Path "../agent-loop.json" `
+            -BaseDirectory $workingDirectory
+
+        $resolvedPath | Should -Be $expectedPath
+    }
+
     It "revalidates an existing setup without changing its saved model choices" {
         $configurationPath = Join-Path $TestDrive "revalidated-agent-loop.json"
         $selection = New-AgentLoopDefaultSetupSelection
@@ -287,6 +299,31 @@ Describe "Invoke-AgentLoopSetup" {
                 -CommandAdapter $fakeCommandAdapter.Invoke `
                 -WorkingDirectory $TestDrive
         } | Should -Throw -ExpectedMessage "*outside the repository*"
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+
+    It "resolves relative configuration paths against the verified worktree before writing" {
+        $repositoryRoot = Join-Path $TestDrive "repo"
+        $workingDirectory = Join-Path $repositoryRoot "subdirectory"
+        New-Item -ItemType Directory -Path $workingDirectory -Force | Out-Null
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses -GitRoot $repositoryRoot)
+        $setupSelection = New-AgentLoopDefaultSetupSelection
+        $configurationPath = Join-Path $repositoryRoot "agent-loop.json"
+
+        Push-Location $workingDirectory
+        try {
+            {
+                Invoke-AgentLoopSetup `
+                    -ConfigPath "..\agent-loop.json" `
+                    -SetupSelection $setupSelection `
+                    -CommandAdapter $fakeCommandAdapter.Invoke `
+                    -WorkingDirectory $workingDirectory
+            } | Should -Throw -ExpectedMessage "*outside the repository*"
+        }
+        finally {
+            Pop-Location
+        }
 
         (Test-Path $configurationPath) | Should -Be $false
     }
