@@ -60,6 +60,7 @@ else {
 Install-AgentLoopPester
 
 Write-Host "Agent loop setup is ready for $($setupResult.Repository)."
+Write-Warning "OpenCode runs on this computer, but later agent requests may send issue text and source files it reads to the selected model provider."
 if ($reuseExistingConfiguration) {
     Write-Host "Existing model choices were revalidated and kept."
 }
