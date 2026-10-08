@@ -5,6 +5,9 @@ permissions:
   - action: "*"
     resource: "*"
     effect: deny
+  - action: execute
+    resource: "*"
+    effect: allow
   - action: external_directory
     resource: "*"
     effect: deny
@@ -30,16 +33,52 @@ permissions:
     resource: "*.env*"
     effect: deny
   - action: read
+    resource: "*.Env*"
+    effect: deny
+  - action: read
+    resource: "*.ENV*"
+    effect: deny
+  - action: read
     resource: "*secrets/*"
     effect: deny
   - action: read
+    resource: "*Secrets/*"
+    effect: deny
+  - action: read
+    resource: "*SECRETS/*"
+    effect: deny
+  - action: read
     resource: "*secret*"
+    effect: deny
+  - action: read
+    resource: "*Secret*"
+    effect: deny
+  - action: read
+    resource: "*SECRET*"
     effect: deny
   - action: read
     resource: "*credentials*"
     effect: deny
   - action: read
     resource: "*creds*"
+    effect: deny
+  - action: read
+    resource: "*.ssh/*"
+    effect: deny
+  - action: read
+    resource: "*.SSH/*"
+    effect: deny
+  - action: read
+    resource: "*.Ssh/*"
+    effect: deny
+  - action: read
+    resource: "*.aws/*"
+    effect: deny
+  - action: read
+    resource: "*.AWS/*"
+    effect: deny
+  - action: read
+    resource: "*.Aws/*"
     effect: deny
   - action: read
     resource: "*.pem"

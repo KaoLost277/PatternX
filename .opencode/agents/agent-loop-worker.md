@@ -5,6 +5,9 @@ permissions:
   - action: "*"
     resource: "*"
     effect: deny
+  - action: execute
+    resource: "*"
+    effect: allow
   - action: external_directory
     resource: "*"
     effect: deny
@@ -45,16 +48,52 @@ permissions:
     resource: "*.env*"
     effect: deny
   - action: read
+    resource: "*.Env*"
+    effect: deny
+  - action: read
+    resource: "*.ENV*"
+    effect: deny
+  - action: read
     resource: "*secrets/*"
     effect: deny
   - action: read
+    resource: "*Secrets/*"
+    effect: deny
+  - action: read
+    resource: "*SECRETS/*"
+    effect: deny
+  - action: read
     resource: "*secret*"
+    effect: deny
+  - action: read
+    resource: "*Secret*"
+    effect: deny
+  - action: read
+    resource: "*SECRET*"
     effect: deny
   - action: read
     resource: "*credentials*"
     effect: deny
   - action: read
     resource: "*creds*"
+    effect: deny
+  - action: read
+    resource: "*.ssh/*"
+    effect: deny
+  - action: read
+    resource: "*.SSH/*"
+    effect: deny
+  - action: read
+    resource: "*.Ssh/*"
+    effect: deny
+  - action: read
+    resource: "*.aws/*"
+    effect: deny
+  - action: read
+    resource: "*.AWS/*"
+    effect: deny
+  - action: read
+    resource: "*.Aws/*"
     effect: deny
   - action: read
     resource: "*.pem"
@@ -93,16 +132,52 @@ permissions:
     resource: "*.env*"
     effect: deny
   - action: edit
+    resource: "*.Env*"
+    effect: deny
+  - action: edit
+    resource: "*.ENV*"
+    effect: deny
+  - action: edit
     resource: "*secrets/*"
     effect: deny
   - action: edit
+    resource: "*Secrets/*"
+    effect: deny
+  - action: edit
+    resource: "*SECRETS/*"
+    effect: deny
+  - action: edit
     resource: "*secret*"
+    effect: deny
+  - action: edit
+    resource: "*Secret*"
+    effect: deny
+  - action: edit
+    resource: "*SECRET*"
     effect: deny
   - action: edit
     resource: "*credentials*"
     effect: deny
   - action: edit
     resource: "*creds*"
+    effect: deny
+  - action: edit
+    resource: "*.ssh/*"
+    effect: deny
+  - action: edit
+    resource: "*.SSH/*"
+    effect: deny
+  - action: edit
+    resource: "*.Ssh/*"
+    effect: deny
+  - action: edit
+    resource: "*.aws/*"
+    effect: deny
+  - action: edit
+    resource: "*.AWS/*"
+    effect: deny
+  - action: edit
+    resource: "*.Aws/*"
     effect: deny
   - action: edit
     resource: "*.pem"
