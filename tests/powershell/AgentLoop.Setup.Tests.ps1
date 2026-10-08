@@ -509,6 +509,25 @@ Describe "Invoke-AgentLoopSetup" {
         $result.Models.Reviewers[0].Argument | Should -Be "openrouter/~anthropic/claude-opus-latest#high"
     }
 
+    It "rejects reviewer aliases that resolve to the same underlying model" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "duplicate-reviewer-alias-agent-loop.json"
+        $setupSelection = New-AgentLoopDefaultSetupSelection -Reviewers @(
+            "openrouter/anthropic/claude-opus-5.5"
+            "openrouter/~anthropic/claude-opus-latest"
+        )
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -SetupSelection $setupSelection `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*different underlying models*"
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+
     It "rejects using one model ID for both independent reviewer roles" {
         $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
         $configurationPath = Join-Path $TestDrive "duplicate-reviewer-agent-loop.json"

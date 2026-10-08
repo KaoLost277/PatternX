@@ -364,6 +364,7 @@ function Resolve-AgentLoopModel {
 
     return [pscustomobject]@{
         Id = $model.Id
+        CanonicalId = "$($model.ProviderId)/$($model.ModelId)"
         Name = $model.Name
         Family = $model.Family
         Variant = $selectedVariant
@@ -614,8 +615,8 @@ function Invoke-AgentLoopSetup {
         Resolve-AgentLoopModel -AvailableModels $availableModels -ModelId $ModelSelection.Reviewers[1] -Role "second reviewer" -ReasoningBudget $ReasoningBudget
     )
 
-    if ($reviewerModels[0].Id -eq $reviewerModels[1].Id) {
-        throw "Reviewer roles must use different model IDs."
+    if ($reviewerModels[0].CanonicalId -eq $reviewerModels[1].CanonicalId) {
+        throw "Reviewer roles must use different underlying models."
     }
 
     $resolvedModels = [pscustomobject]@{
