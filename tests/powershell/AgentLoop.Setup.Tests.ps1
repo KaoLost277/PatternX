@@ -265,6 +265,33 @@ Describe "Invoke-AgentLoopSetup" {
         $resolvedPath | Should -Be $expectedPath
     }
 
+    It "rejects configuration paths that traverse a filesystem link" {
+        $repositoryRoot = Join-Path $TestDrive "linked-repo"
+        $externalDirectory = Join-Path $TestDrive "external-config"
+        $linkedDirectory = Join-Path $repositoryRoot "linked-config"
+        New-Item -ItemType Directory -Path $repositoryRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $externalDirectory -Force | Out-Null
+
+        try {
+            New-Item -ItemType SymbolicLink -Path $linkedDirectory -Target $externalDirectory -ErrorAction Stop | Out-Null
+        }
+        catch {
+            try {
+                New-Item -ItemType Junction -Path $linkedDirectory -Target $externalDirectory -ErrorAction Stop | Out-Null
+            }
+            catch {
+                Set-ItResult -Skipped -Because "The current PowerShell account cannot create a symbolic link or junction."
+                return
+            }
+        }
+
+        {
+            Resolve-AgentLoopConfigurationPath `
+                -Path "linked-config/agent-loop.json" `
+                -BaseDirectory $repositoryRoot
+        } | Should -Throw -ExpectedMessage "*link*"
+    }
+
     It "revalidates an existing setup without changing its saved model choices" {
         $configurationPath = Join-Path $TestDrive "revalidated-agent-loop.json"
         $selection = New-AgentLoopDefaultSetupSelection

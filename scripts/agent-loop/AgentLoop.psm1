@@ -56,6 +56,39 @@ function Get-AgentLoopConfigurationPath {
     return Join-Path $configurationDirectory "agent-loop.json"
 }
 
+function Test-AgentLoopPathHasReparsePoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $currentPath = [System.IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrWhiteSpace($currentPath)) {
+        if (Test-Path -LiteralPath $currentPath) {
+            $pathItem = Get-Item -LiteralPath $currentPath -Force
+            $linkTypeProperty = $pathItem.PSObject.Properties["LinkType"]
+            if ($null -ne $linkTypeProperty -and -not [string]::IsNullOrWhiteSpace([string]$linkTypeProperty.Value)) {
+                return $true
+            }
+
+            $attributesProperty = $pathItem.PSObject.Properties["Attributes"]
+            if ($null -ne $attributesProperty -and
+                (($attributesProperty.Value -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                return $true
+            }
+        }
+
+        $parentPath = Split-Path -Parent $currentPath
+        if ([string]::IsNullOrWhiteSpace($parentPath) -or $parentPath -eq $currentPath) {
+            break
+        }
+
+        $currentPath = $parentPath
+    }
+
+    return $false
+}
+
 function Resolve-AgentLoopConfigurationPath {
     [CmdletBinding()]
     param(
@@ -66,11 +99,18 @@ function Resolve-AgentLoopConfigurationPath {
     )
 
     if ([System.IO.Path]::IsPathRooted($Path)) {
-        return [System.IO.Path]::GetFullPath($Path)
+        $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    }
+    else {
+        $canonicalBaseDirectory = [System.IO.Path]::GetFullPath($BaseDirectory)
+        $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $canonicalBaseDirectory $Path))
     }
 
-    $canonicalBaseDirectory = [System.IO.Path]::GetFullPath($BaseDirectory)
-    return [System.IO.Path]::GetFullPath((Join-Path $canonicalBaseDirectory $Path))
+    if (Test-AgentLoopPathHasReparsePoint -Path $resolvedPath) {
+        throw "Agent-loop configuration paths cannot traverse symbolic links or junctions."
+    }
+
+    return $resolvedPath
 }
 
 function Find-AgentLoopPesterModule {
