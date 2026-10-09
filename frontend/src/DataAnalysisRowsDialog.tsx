@@ -2,7 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import type { DataAnalysisRowsPage } from "./dataAnalysisApi";
 import { InputRowsTable } from "./InputRowsTable";
 import { RowColumnModeSelector } from "./RowColumnModeSelector";
-import { visibleColumnIndexes } from "./rowColumnMode";
+import { projectVisibleRows } from "./rowColumnMode";
 import type { RowColumnMode } from "./rowColumnMode";
 import {
   dialogClasses,
@@ -71,8 +71,9 @@ export function DataAnalysisRowsDialog({
   const totalRows = page?.total_rows ?? matchingRowCount;
   const pageSize = page?.page_size ?? 50;
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
-  const visibleIndexes = visibleColumnIndexes(
+  const visibleRows = projectVisibleRows(
     page?.columns ?? [],
+    page?.rows ?? [],
     analysisColumns,
     columnMode,
   );
@@ -173,10 +174,8 @@ export function DataAnalysisRowsDialog({
           </p>
           <InputRowsTable
             ariaLabel="Matching Input Rows. Scroll to view additional columns or rows."
-            columns={visibleIndexes.map((index) => page.columns[index])}
-            rows={page.rows.map((row) =>
-              visibleIndexes.map((index) => row[index] ?? null),
-            )}
+            columns={visibleRows.columns}
+            rows={visibleRows.rows}
           />
         </div>
       )}

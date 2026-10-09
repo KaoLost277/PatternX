@@ -28,7 +28,11 @@ from app.data_analyses import (
     value_function_name,
 )
 from app.patterns import AnalysisCancelledError
-from app.row_details import ColumnMode, source_columns_for_mode
+from app.row_details import (
+    ColumnMode,
+    SourceColumnProjection,
+    source_column_projection,
+)
 from app.sqlite_storage import CSVFileError, CSVImportCancelledError, load_csv_into_database, open_analysis_database
 from app.workfiles import clean_up_job, clean_up_job_sources
 
@@ -206,7 +210,7 @@ class DataAnalysisJob:
             if self.state != JOB_STATE_SUCCEEDED or self.result is None:
                 raise DataAnalysisNotSucceededError()
 
-            query, parameters, matching_row_count = self._rows_query(
+            query, parameters, matching_row_count, _ = self._rows_query(
                 target_kind,
                 item_index,
                 column_index,
@@ -250,7 +254,7 @@ class DataAnalysisJob:
             if self.state != JOB_STATE_SUCCEEDED or self.result is None:
                 raise DataAnalysisNotSucceededError()
 
-            query, parameters, _ = self._rows_query(
+            query, parameters, _, column_projection = self._rows_query(
                 target_kind,
                 item_index,
                 column_index,
@@ -268,12 +272,7 @@ class DataAnalysisJob:
                 connection,
                 self._lock,
             )
-            visible_source_columns = source_columns_for_mode(
-                self.analysis_inputs.column_names,
-                self.result.selected_columns,
-                column_mode,
-            )
-            return visible_source_columns, rows
+            return list(column_projection.names), rows
         except BaseException:
             try:
                 if connection is not None:
@@ -288,7 +287,7 @@ class DataAnalysisJob:
         item_index: int,
         column_index: int | None,
         column_mode: ColumnMode = "all",
-    ) -> tuple[str, list[object], int]:
+    ) -> tuple[str, list[object], int, SourceColumnProjection]:
         if self.result is None:
             raise DataAnalysisNotSucceededError()
         if item_index < 0:
@@ -336,20 +335,16 @@ class DataAnalysisJob:
         else:
             raise DataAnalysisTargetNotFoundError()
 
-        visible_source_columns = source_columns_for_mode(
+        column_projection = source_column_projection(
             self.analysis_inputs.column_names,
             self.result.selected_columns,
             column_mode,
         )
-        source_columns = [
-            sqlite_column_name(self.analysis_inputs.column_names.index(column_name))
-            for column_name in visible_source_columns
-        ]
         query = (
-            f'SELECT {", ".join(source_columns)} FROM "input_rows" '
+            f'SELECT {", ".join(column_projection.sqlite_columns)} FROM "input_rows" '
             f'WHERE {" AND ".join(conditions)} ORDER BY rowid ASC'
         )
-        return query, parameters, matching_row_count
+        return query, parameters, matching_row_count, column_projection
 
     def _run_analysis(self) -> None:
         connection: sqlite3.Connection | None = None

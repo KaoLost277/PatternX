@@ -35,7 +35,11 @@ from app.patterns import (
     PatternSummary,
     compute_pattern_summary,
 )
-from app.row_details import ColumnMode, source_columns_for_mode
+from app.row_details import (
+    ColumnMode,
+    SourceColumnProjection,
+    source_column_projection,
+)
 from app.sqlite_storage import (
     CSVFileError,
     CSVImportCancelledError,
@@ -209,16 +213,12 @@ class AnalysisJob:
         self,
         pattern: CompletenessPattern,
         column_mode: ColumnMode = "all",
-    ) -> tuple[str, list[int]]:
-        visible_source_columns = source_columns_for_mode(
+    ) -> tuple[str, list[int], SourceColumnProjection]:
+        column_projection = source_column_projection(
             self.analysis_inputs.column_names,
             self.analysis_inputs.analysis_columns,
             column_mode,
         )
-        source_columns = [
-            sqlite_column_name(self.analysis_inputs.column_names.index(column_name))
-            for column_name in visible_source_columns
-        ]
         status_conditions = []
         for column_name in self.analysis_inputs.analysis_columns:
             column_index = self.analysis_inputs.column_names.index(column_name)
@@ -228,14 +228,14 @@ class AnalysisJob:
             )
 
         query = (
-            f'SELECT {", ".join(source_columns)} FROM "input_rows" '
+            f'SELECT {", ".join(column_projection.sqlite_columns)} FROM "input_rows" '
             f'WHERE {" AND ".join(status_conditions)} '
             "ORDER BY rowid ASC"
         )
         expected_status_values = [
             int(status == PRESENT_STATUS) for status in pattern.statuses
         ]
-        return query, expected_status_values
+        return query, expected_status_values, column_projection
 
     def pattern_rows_page(self, pattern_index: int, page: int) -> dict[str, object]:
         """Read one source-ordered page matching a completed summary pattern."""
@@ -259,7 +259,7 @@ class AnalysisJob:
                         self.analysis_inputs.column_names,
                         self.analysis_inputs.missing_markers_by_column,
                     )
-                    query, expected_status_values = self._pattern_rows_query(pattern)
+                    query, expected_status_values, _ = self._pattern_rows_query(pattern)
                     rows = connection.execute(
                         f"{query} LIMIT ? OFFSET ?",
                         [*expected_status_values, PATTERN_ROWS_PAGE_SIZE, offset],
@@ -300,15 +300,13 @@ class AnalysisJob:
                 self.analysis_inputs.missing_markers_by_column,
             )
 
-            query, expected_status_values = self._pattern_rows_query(pattern, column_mode)
-            cursor = connection.execute(query, expected_status_values)
-            rows = PatternRowsExportRows(cursor, connection, self._lock)
-            visible_source_columns = source_columns_for_mode(
-                self.analysis_inputs.column_names,
-                self.analysis_inputs.analysis_columns,
+            query, expected_status_values, column_projection = self._pattern_rows_query(
+                pattern,
                 column_mode,
             )
-            return visible_source_columns, rows
+            cursor = connection.execute(query, expected_status_values)
+            rows = PatternRowsExportRows(cursor, connection, self._lock)
+            return list(column_projection.names), rows
         except BaseException:
             try:
                 if connection is not None:

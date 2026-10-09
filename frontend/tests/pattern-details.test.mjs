@@ -163,6 +163,25 @@ test("pattern details fall back to all source columns if the analysis set has no
   assert.equal((tableRegion.match(/<th\b/g) ?? []).length, 2);
 });
 
+test("visible-row projection filters headers and cells together in source order", async () => {
+  const { projectVisibleRows } = await viteServer.ssrLoadModule(
+    "/src/rowColumnMode.ts",
+  );
+
+  assert.deepEqual(
+    projectVisibleRows(
+      ["record_id", "email", "phone", "notes"],
+      [["A1", "ada@example.com", "555-0100", "first"]],
+      ["phone", "email"],
+      "analysis",
+    ),
+    {
+      columns: ["email", "phone"],
+      rows: [["ada@example.com", "555-0100"]],
+    },
+  );
+});
+
 test("pattern row requests use the job and canonical pattern index with the selected page", async () => {
   const { fetchPatternRowsPage } = await viteServer.ssrLoadModule("/src/patternRows.ts");
   const previousFetch = globalThis.fetch;

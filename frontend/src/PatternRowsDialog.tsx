@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { PatternRowsPage } from "./patternRows";
 import { InputRowsTable } from "./InputRowsTable";
 import { RowColumnModeSelector } from "./RowColumnModeSelector";
-import { visibleColumnIndexes } from "./rowColumnMode";
+import { projectVisibleRows } from "./rowColumnMode";
 import type { RowColumnMode } from "./rowColumnMode";
 import {
   dialogClasses,
@@ -68,8 +68,9 @@ export function PatternRowsDialog({
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
   const previousPageAvailable = requestedPage > 1;
   const nextPageAvailable = requestedPage < pageCount;
-  const visibleIndexes = visibleColumnIndexes(
+  const visibleRows = projectVisibleRows(
     page?.columns ?? [],
+    page?.rows ?? [],
     analysisColumns,
     columnMode,
   );
@@ -170,10 +171,8 @@ export function PatternRowsDialog({
           </p>
           <InputRowsTable
             ariaLabel="Input Rows table. Scroll to view additional columns or rows."
-            columns={visibleIndexes.map((index) => page.columns[index])}
-            rows={page.rows.map((row) =>
-              visibleIndexes.map((index) => row[index] ?? null),
-            )}
+            columns={visibleRows.columns}
+            rows={visibleRows.rows}
           />
         </div>
       )}

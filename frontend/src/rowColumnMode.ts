@@ -1,20 +1,33 @@
 export type RowColumnMode = "all" | "analysis";
 
-export function visibleColumnIndexes(
+export interface VisibleRowsProjection {
+  columns: string[];
+  rows: (string | null)[][];
+}
+
+export function projectVisibleRows(
   sourceColumns: string[],
+  sourceRows: (string | null)[][],
   analysisColumns: string[],
   mode: RowColumnMode,
-): number[] {
+): VisibleRowsProjection {
   const allIndexes = sourceColumns.map((_, index) => index);
-  if (mode === "all") {
-    return allIndexes;
+  let visibleIndexes = allIndexes;
+  if (mode === "analysis") {
+    const analysisColumnSet = new Set(analysisColumns);
+    const analysisIndexes = sourceColumns.flatMap((columnName, index) =>
+      analysisColumnSet.has(columnName) ? [index] : [],
+    );
+    if (analysisIndexes.length > 0) {
+      visibleIndexes = analysisIndexes;
+    }
   }
 
-  const analysisColumnSet = new Set(analysisColumns);
-  const analysisIndexes = sourceColumns.flatMap((columnName, index) =>
-    analysisColumnSet.has(columnName) ? [index] : [],
-  );
-
   // Keep the table interpretable if analysis metadata would hide every column.
-  return analysisIndexes.length > 0 ? analysisIndexes : allIndexes;
+  return {
+    columns: visibleIndexes.map((index) => sourceColumns[index]),
+    rows: sourceRows.map((row) =>
+      visibleIndexes.map((index) => row[index] ?? null),
+    ),
+  };
 }
