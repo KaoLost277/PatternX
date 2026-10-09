@@ -1735,7 +1735,7 @@ function App() {
                       This selection uses {columnsToAnalyze.length} columns; the largest recorded
                       benchmark used {MAX_BENCHMARKED_SELECTED_COLUMNS}. Runtime and memory use for
                       wider selections are unmeasured. This warning does not limit or truncate the
-                      the exact summary.
+                      exact summary.
                     </p>
                   )}
                 </fieldset>
@@ -1750,7 +1750,7 @@ function App() {
                     Patterns. Review your selection, then acknowledge this warning before the
                     analysis starts.
                   </p>
-                  <label className="flex cursor-pointer items-center gap-2 break-words text-sm">
+                  <label className="flex min-h-10 cursor-pointer items-center gap-2 break-words text-sm">
                     <input
                       type="checkbox"
                       className="shrink-0"
