@@ -19,7 +19,7 @@ export function InputRowsTable({ ariaLabel, columns, rows }: InputRowsTableProps
       aria-label={ariaLabel}
       tabIndex={0}
     >
-      <table className={`${separatedSummaryTableClasses} min-w-max`}>
+      <table className={separatedSummaryTableClasses}>
         <thead>
           <tr>
             {columns.map((columnName, columnIndex) => (
@@ -38,7 +38,9 @@ export function InputRowsTable({ ariaLabel, columns, rows }: InputRowsTableProps
             <tr key={rowIndex}>
               {columns.map((_, columnIndex) => (
                 <td className={rowDetailsTableCellClasses} key={columnIndex}>
-                  <span className="break-words">{row[columnIndex] ?? "Not set"}</span>
+                  <span className="[overflow-wrap:anywhere]">
+                    {row[columnIndex] ?? "Not set"}
+                  </span>
                 </td>
               ))}
             </tr>

@@ -646,7 +646,9 @@ function FormalColumnResults({
                       View rows
                     </button>
                   </td>
-                  <th scope="row"><span className="break-words">{formatTerm(term.value)}</span></th>
+                  <th scope="row">
+                    <span className="[overflow-wrap:anywhere]">{formatTerm(term.value)}</span>
+                  </th>
                   <td>{term.count.toLocaleString()}</td>
                   <td>{formatShare(term.share)}</td>
                 </tr>
@@ -703,7 +705,9 @@ function FormalColumnResults({
                       View rows
                     </button>
                   </td>
-                  <th scope="row"><span className="break-words">{pattern.pattern}</span></th>
+                  <th scope="row">
+                    <span className="[overflow-wrap:anywhere]">{pattern.pattern}</span>
+                  </th>
                   <td>{pattern.occurrence_count.toLocaleString()}</td>
                   <td>{pattern.distinct_term_count.toLocaleString()}</td>
                   <td>{formatShare(pattern.share)}</td>
@@ -803,7 +807,9 @@ export function GroupDataResults({
                     </button>
                   </td>
                   {group.values.map((value, valueIndex) => (
-                    <td key={valueIndex}><span className="break-words">{formatTerm(value)}</span></td>
+                    <td key={valueIndex}>
+                      <span className="[overflow-wrap:anywhere]">{formatTerm(value)}</span>
+                    </td>
                   ))}
                   <td>{group.count.toLocaleString()}</td>
                   <td>{formatShare(group.share)}</td>

@@ -132,9 +132,18 @@ export function PatternRowsDialog({
       )}
 
       {!loading && error === null && page !== null && page.total_rows === 0 && (
-        <p className={hintTextClasses} role="status">
-          No Input Rows were found for this Completeness Pattern.
-        </p>
+        <div className="grid justify-items-start gap-3">
+          <p className={hintTextClasses} role="status">
+            No Input Rows were found for this Completeness Pattern.
+          </p>
+          <button
+            type="button"
+            className={secondaryButtonClasses}
+            onClick={handleCloseButtonClicked}
+          >
+            Return to summary
+          </button>
+        </div>
       )}
 
       {!loading && error === null && page !== null && page.total_rows > 0 && (

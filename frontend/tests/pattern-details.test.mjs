@@ -256,6 +256,7 @@ test("pattern details distinguish loading, empty, and retrieval-error states", a
   assert.match(loadingMarkup, /Loading Input Rows for this pattern/);
   assert.doesNotMatch(loadingMarkup, /<table/);
   assert.match(emptyMarkup, /No Input Rows were found/);
+  assert.match(emptyMarkup, /Return to summary/);
   assert.doesNotMatch(emptyMarkup, /<table/);
   assert.match(errorMarkup, /role="alert"/);
   assert.match(errorMarkup, /The detail rows could not be read\./);

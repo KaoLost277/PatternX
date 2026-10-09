@@ -107,13 +107,13 @@ export function PatternPreview({
         tabIndex={0}
       >
         <table
-          className={`${separatedSummaryTableClasses} min-w-max`}
+          className={separatedSummaryTableClasses}
           aria-label="Sample rows for the selected Completeness Pattern"
         >
           <thead>
             <tr>
               <SortableHeader
-                className="sticky left-0 top-0 z-20 min-w-36 bg-surface-muted"
+                className="sticky left-0 top-0 z-20 min-w-36 max-w-72 bg-surface-muted [overflow-wrap:anywhere]"
                 label={identifierColumnLabel}
                 sortKey="identifier"
                 sortState={activePreviewSort}
@@ -123,7 +123,7 @@ export function PatternPreview({
                 <SortableHeader
                   key={columnIndex}
                   label={columnName}
-                  className="sticky top-0 z-10 bg-surface-muted"
+                  className="sticky top-0 z-10 min-w-32 max-w-72 bg-surface-muted [overflow-wrap:anywhere]"
                   sortKey={`value:${columnIndex}`}
                   sortState={activePreviewSort}
                   onSort={handlePreviewSortChanged}
@@ -134,17 +134,21 @@ export function PatternPreview({
           <tbody>
             {displayedPreviewRows.map((previewRow, previewRowIndex) => (
               <tr key={previewRowIndex}>
-                <th className="sticky left-0 z-10 min-w-36 bg-surface font-semibold text-text shadow-[1px_0_0_var(--color-border)]" scope="row">
+                <th className="sticky left-0 z-10 min-w-36 max-w-72 bg-surface font-semibold text-text shadow-[1px_0_0_var(--color-border)] [overflow-wrap:anywhere]" scope="row">
                   {previewRow.identifier_value ?? "Not set"}
                 </th>
                 {visibleColumns.map(({ columnIndex }) => {
                   const cellValue = previewRow.values[columnIndex] ?? null;
 
                   return (
-                    <td key={columnIndex}>
-                      <div className="grid min-w-0 gap-2">
-                        <PatternStatusLabel status={pattern.statuses[columnIndex]} />
-                        {cellValue !== null && <span className="break-words text-text-secondary">{cellValue}</span>}
+                  <td className="min-w-32" key={columnIndex}>
+                    <div className="grid min-w-0 gap-2">
+                      <PatternStatusLabel status={pattern.statuses[columnIndex]} />
+                      {cellValue !== null && (
+                        <span className="text-text-secondary [overflow-wrap:anywhere]">
+                          {cellValue}
+                        </span>
+                      )}
                       </div>
                     </td>
                   );

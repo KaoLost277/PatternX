@@ -135,9 +135,18 @@ export function DataAnalysisRowsDialog({
       )}
 
       {!loading && error === null && page !== null && page.total_rows === 0 && (
-        <p className={hintTextClasses} role="status">
-          No Input Rows match {targetDescription}.
-        </p>
+        <div className="grid justify-items-start gap-3">
+          <p className={hintTextClasses} role="status">
+            No Input Rows match {targetDescription}.
+          </p>
+          <button
+            type="button"
+            className={secondaryButtonClasses}
+            onClick={handleCloseButtonClicked}
+          >
+            Return to summary
+          </button>
+        </div>
       )}
 
       {!loading && error === null && page !== null && page.total_rows > 0 && (

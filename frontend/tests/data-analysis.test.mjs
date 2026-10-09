@@ -335,6 +335,7 @@ test("shared data-analysis row details distinguish loading, empty, error, and ex
   assert.match(loadingMarkup, /Loading matching Input Rows/);
   assert.doesNotMatch(loadingMarkup, /<table/);
   assert.match(emptyMarkup, /No Input Rows match/);
+  assert.match(emptyMarkup, /Return to summary/);
   assert.doesNotMatch(emptyMarkup, /<table/);
   assert.match(errorMarkup, /role="alert"/);
   assert.match(errorMarkup, /The matching rows could not be retrieved\./);

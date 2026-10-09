@@ -1849,7 +1849,7 @@ function App() {
                   tabIndex={0}
                 >
                   <table
-                    className={`${separatedSummaryTableClasses} min-w-max`}
+                    className={separatedSummaryTableClasses}
                     aria-label="Completeness Patterns Summary"
                   >
                     <thead>
@@ -1861,7 +1861,7 @@ function App() {
                           <SortableHeader
                             key={columnIndex}
                             label={columnName}
-                            className="sticky top-0 z-10 bg-surface-muted"
+                            className="sticky top-0 z-10 min-w-32 max-w-72 bg-surface-muted [overflow-wrap:anywhere]"
                             sortKey={`status:${columnIndex}`}
                             sortState={patternSort}
                             onSort={handlePatternSortChanged}
@@ -1869,14 +1869,14 @@ function App() {
                         ))}
                         <SortableHeader
                           label="Input Rows"
-                          className="sticky top-0 z-10 bg-surface-muted"
+                          className="sticky top-0 z-10 min-w-28 bg-surface-muted"
                           sortKey="count"
                           sortState={patternSort}
                           onSort={handlePatternSortChanged}
                         />
                         <SortableHeader
                           label="Share of Input Rows"
-                          className="sticky top-0 z-10 bg-surface-muted"
+                          className="sticky top-0 z-10 min-w-28 bg-surface-muted"
                           sortKey="share"
                           sortState={patternSort}
                           onSort={handlePatternSortChanged}

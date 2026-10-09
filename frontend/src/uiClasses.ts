@@ -32,9 +32,9 @@ export const summaryTableFrameClasses = [
 
 const summaryTableCellClasses = [
   "w-full text-left text-sm text-text-secondary",
-  "[&_th]:max-w-72 [&_th]:break-words [&_th]:border-b [&_th]:border-border",
+  "[&_th]:max-w-72 [&_th]:[overflow-wrap:anywhere] [&_th]:border-b [&_th]:border-border",
   "[&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:align-top",
-  "[&_td]:break-words [&_td]:border-b [&_td]:border-border [&_td]:px-4",
+  "[&_td]:[overflow-wrap:anywhere] [&_td]:border-b [&_td]:border-border [&_td]:px-4",
   "[&_td]:py-3 [&_td]:align-top [&_thead]:bg-surface-muted",
   "[&_thead_th]:text-xs [&_thead_th]:font-semibold",
   "[&_tbody_th]:font-semibold [&_tbody_th]:text-text",
@@ -118,7 +118,7 @@ export const dataAnalysisActionCellClasses =
   "sticky left-0 z-10 min-w-28 bg-surface shadow-[1px_0_0_var(--color-border)]";
 
 export const rowDetailsTableHeaderClasses =
-  "sticky top-0 z-10 min-w-32 bg-surface-muted";
+  "sticky top-0 z-10 min-w-32 max-w-72 bg-surface-muted [overflow-wrap:anywhere]";
 
 export const rowDetailsTableCellClasses = "min-w-32";
 
