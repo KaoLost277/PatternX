@@ -442,14 +442,32 @@ function Get-AgentLoopInteractiveModelSelection {
         }
     }
 
-    $firstReviewerModel = Read-AgentLoopModelChoice -AvailableModels $AvailableModels -Role "first reviewer"
-    $secondReviewerModel = Read-AgentLoopModelChoice -AvailableModels $AvailableModels -Role "second reviewer"
+    $reviewerCount = Read-Host "Configured reviewers (1 routine, 2 high-risk; rerun setup to change) [1]"
+    if ([string]::IsNullOrWhiteSpace($reviewerCount)) {
+        $reviewerCount = "1"
+    }
+
+    while ($reviewerCount -notin @("1", "2")) {
+        Write-Warning "Choose one or two reviewers."
+        $reviewerCount = Read-Host "Configured reviewers (1 routine, 2 high-risk; rerun setup to change) [1]"
+        if ([string]::IsNullOrWhiteSpace($reviewerCount)) {
+            $reviewerCount = "1"
+        }
+    }
+
+    $reviewers = @(
+        Read-AgentLoopModelChoice -AvailableModels $AvailableModels -Role "reviewer"
+    )
+    if ($reviewerCount -eq "2") {
+        $reviewers += Read-AgentLoopModelChoice -AvailableModels $AvailableModels -Role "second reviewer"
+    }
+
     $reasoningBudget = Read-Host "Reasoning budget (small, medium, large, unlimited)"
 
     return @{
         Implementer = $implementerModel.Trim()
         Repairer = $repairerModel.Trim()
-        Reviewers = @($firstReviewerModel.Trim(), $secondReviewerModel.Trim())
+        Reviewers = @($reviewers | ForEach-Object { $_.Trim() })
         ReasoningBudget = $reasoningBudget.Trim().ToLowerInvariant()
     }
 }
@@ -606,17 +624,31 @@ function Invoke-AgentLoopSetup {
         throw "Choose a reasoning budget of small, medium, large, or unlimited."
     }
 
-    if (@($ModelSelection.Reviewers).Count -ne 2) {
-        throw "Exactly two independent reviewer models must be selected."
+    $reviewerIds = @($ModelSelection.Reviewers)
+    if ($reviewerIds.Count -notin @(1, 2)) {
+        throw "Select one or two reviewer models."
     }
 
-    $reviewerModels = @(
-        Resolve-AgentLoopModel -AvailableModels $availableModels -ModelId $ModelSelection.Reviewers[0] -Role "first reviewer" -ReasoningBudget $ReasoningBudget
-        Resolve-AgentLoopModel -AvailableModels $availableModels -ModelId $ModelSelection.Reviewers[1] -Role "second reviewer" -ReasoningBudget $ReasoningBudget
-    )
+    $reviewerModels = @()
+    for ($reviewerIndex = 0; $reviewerIndex -lt $reviewerIds.Count; $reviewerIndex++) {
+        if ($reviewerIndex -eq 0) {
+            $reviewerRole = "reviewer"
+        }
+        else {
+            $reviewerRole = "second reviewer"
+        }
 
-    if ($reviewerModels[0].CanonicalId -eq $reviewerModels[1].CanonicalId) {
-        throw "Reviewer roles must use different underlying models."
+        $reviewerModels += Resolve-AgentLoopModel `
+            -AvailableModels $availableModels `
+            -ModelId $reviewerIds[$reviewerIndex] `
+            -Role $reviewerRole `
+            -ReasoningBudget $ReasoningBudget
+    }
+
+    if ($reviewerModels.Count -eq 2) {
+        if ($reviewerModels[0].CanonicalId -eq $reviewerModels[1].CanonicalId) {
+            throw "Reviewer roles must use different underlying models."
+        }
     }
 
     $resolvedModels = [pscustomobject]@{
@@ -649,18 +681,20 @@ function Invoke-AgentLoopSetup {
             throw "The saved agent-loop configuration is stale for this repository or its default branch."
         }
 
+        $savedReviewerModels = @($savedConfiguration.Models.Reviewers)
+        $currentReviewerModels = @($configuration.Models.Reviewers)
+        if ($savedReviewerModels.Count -ne $currentReviewerModels.Count) {
+            throw "The saved reviewer selection is stale."
+        }
+
         $savedRoles = @(
             $savedConfiguration.Models.Implementer
             $savedConfiguration.Models.Repairer
-            $savedConfiguration.Models.Reviewers[0]
-            $savedConfiguration.Models.Reviewers[1]
-        )
+        ) + $savedReviewerModels
         $currentRoles = @(
             $configuration.Models.Implementer
             $configuration.Models.Repairer
-            $configuration.Models.Reviewers[0]
-            $configuration.Models.Reviewers[1]
-        )
+        ) + $currentReviewerModels
 
         for ($roleIndex = 0; $roleIndex -lt $currentRoles.Count; $roleIndex++) {
             if ($savedRoles[$roleIndex].Id -ne $currentRoles[$roleIndex].Id -or
@@ -725,8 +759,8 @@ function Test-AgentLoopSetupConfiguration {
         Implementer = [string]$savedConfiguration.Models.Implementer.Id
         Repairer = [string]$savedConfiguration.Models.Repairer.Id
         Reviewers = @(
-            [string]$savedConfiguration.Models.Reviewers[0].Id
-            [string]$savedConfiguration.Models.Reviewers[1].Id
+            $savedConfiguration.Models.Reviewers |
+                ForEach-Object { [string]$_.Id }
         )
         ReasoningBudget = [string]$savedConfiguration.ReasoningBudget
     }

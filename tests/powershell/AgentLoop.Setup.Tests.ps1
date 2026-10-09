@@ -42,7 +42,6 @@ BeforeAll {
             [string]$Repairer = "openrouter/openai/gpt-6-luna",
             [string[]]$Reviewers = @(
                 "openrouter/anthropic/claude-opus-5.5"
-                "openrouter/x-ai/grok-4.7"
             ),
             [string]$ReasoningBudget = "large"
         )
@@ -311,6 +310,7 @@ Describe "Invoke-AgentLoopSetup" {
             -WorkingDirectory $TestDrive
 
         $result.GitHubScopeStatus | Should -Be "verified"
+        $result.Models.Reviewers.Count | Should -Be 1
         (Get-Content $configurationPath -Raw) | Should -Be $configurationBeforeValidation
     }
 
@@ -374,14 +374,93 @@ Describe "Invoke-AgentLoopSetup" {
         $savedConfiguration.Models.Implementer.Id | Should -Be "openrouter/openai/gpt-6-luna"
         $savedConfiguration.Models.Implementer.Argument | Should -Be "openrouter/openai/gpt-6-luna#xhigh"
         $savedConfiguration.Models.Implementer.BudgetMode | Should -Be "variant"
-        $savedConfiguration.Models.Reviewers.Count | Should -Be 2
+        $savedConfiguration.Models.Reviewers.Count | Should -Be 1
         $savedConfiguration.Models.Reviewers[0].Argument | Should -Be "openrouter/anthropic/claude-opus-5.5#high"
-        $savedConfiguration.Models.Reviewers[1].Argument | Should -Be "openrouter/x-ai/grok-4.7#xhigh"
         $savedConfiguration.ReasoningBudget | Should -Be "large"
         $fakeCommandAdapter.Calls.Count | Should -Be 6
         ($fakeCommandAdapter.Calls | Where-Object { $_.Executable -eq "git" }).Count | Should -Be 2
         ($fakeCommandAdapter.Calls | Where-Object { $_.Executable -eq "gh" }).Count | Should -Be 2
         ((Get-Content $configurationPath -Raw) -match "token|secret|api.?key") | Should -Be $false
+    }
+
+    It "saves a second reviewer when explicitly configured for high-risk work" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "high-risk-agent-loop.json"
+        $selection = New-AgentLoopDefaultSetupSelection -Reviewers @(
+            "openrouter/anthropic/claude-opus-5.5"
+            "openrouter/x-ai/grok-4.7"
+        )
+
+        $result = Invoke-AgentLoopSetup `
+            -ConfigPath $configurationPath `
+            -SetupSelection $selection `
+            -CommandAdapter $fakeCommandAdapter.Invoke `
+            -WorkingDirectory $TestDrive
+
+        $result.Models.Reviewers.Count | Should -Be 2
+        $savedConfiguration = Get-Content $configurationPath -Raw | ConvertFrom-Json
+        $savedConfiguration.Models.Reviewers.Count | Should -Be 2
+        $savedConfiguration.Models.Reviewers[1].Id | Should -Be "openrouter/x-ai/grok-4.7"
+    }
+
+    It "revalidates a saved two-reviewer configuration" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "revalidated-high-risk-agent-loop.json"
+        $selection = New-AgentLoopDefaultSetupSelection -Reviewers @(
+            "openrouter/anthropic/claude-opus-5.5"
+            "openrouter/x-ai/grok-4.7"
+        )
+
+        Invoke-AgentLoopSetup `
+            -ConfigPath $configurationPath `
+            -SetupSelection $selection `
+            -CommandAdapter $fakeCommandAdapter.Invoke `
+            -WorkingDirectory $TestDrive | Out-Null
+
+        $validationAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $result = Test-AgentLoopSetupConfiguration `
+            -ConfigPath $configurationPath `
+            -CommandAdapter $validationAdapter.Invoke `
+            -WorkingDirectory $TestDrive
+
+        $result.Models.Reviewers.Count | Should -Be 2
+        $result.Models.Reviewers[1].Id | Should -Be "openrouter/x-ai/grok-4.7"
+    }
+
+    It "rejects a setup without any reviewer" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "no-reviewer-agent-loop.json"
+        $selection = New-AgentLoopDefaultSetupSelection -Reviewers @()
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -SetupSelection $selection `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*one or two reviewer models*"
+
+        (Test-Path $configurationPath) | Should -Be $false
+    }
+
+    It "rejects more than two reviewers" {
+        $fakeCommandAdapter = New-FakeAgentLoopCommandAdapter -Responses (New-AgentLoopSetupResponses)
+        $configurationPath = Join-Path $TestDrive "too-many-reviewers-agent-loop.json"
+        $selection = New-AgentLoopDefaultSetupSelection -Reviewers @(
+            "openrouter/anthropic/claude-opus-5.5"
+            "openrouter/x-ai/grok-4.7"
+            "openrouter/openai/gpt-6-luna"
+        )
+
+        {
+            Invoke-AgentLoopSetup `
+                -ConfigPath $configurationPath `
+                -SetupSelection $selection `
+                -CommandAdapter $fakeCommandAdapter.Invoke `
+                -WorkingDirectory $TestDrive
+        } | Should -Throw -ExpectedMessage "*one or two reviewer models*"
+
+        (Test-Path $configurationPath) | Should -Be $false
     }
 
     It "refuses GitHub accounts without write access before saving configuration" {
@@ -664,5 +743,16 @@ Describe "Agent-loop OpenCode permissions" {
         $reviewerProfile | Should -Not -Match 'action: grep\s+resource: "\*"\s+effect: allow'
         $reviewerProfile | Should -Not -Match 'action: edit'
         $reviewerProfile | Should -Not -Match 'action: shell'
+    }
+
+    It "keeps worker and reviewer handoffs concise" {
+        $agentDirectory = Join-Path $PSScriptRoot "../../.opencode/agents"
+        $workerProfile = Get-Content (Join-Path $agentDirectory "agent-loop-worker.md") -Raw
+        $reviewerProfile = Get-Content (Join-Path $agentDirectory "agent-loop-reviewer.md") -Raw
+
+        $workerProfile | Should -Match "(?i)concise handoff"
+        $workerProfile | Should -Match "(?i)do not include full logs"
+        $reviewerProfile | Should -Match "(?i)concise"
+        $reviewerProfile | Should -Match "(?i)do not repeat the diff"
     }
 }
