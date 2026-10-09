@@ -42,6 +42,7 @@ import {
   fileColumnsSummaryClasses,
   hintTextClasses,
   identifierOptionClasses,
+  loadingSpinnerClasses,
   missingValueTableClasses,
   missingValueSummaryClasses,
   primaryButtonClasses as PRIMARY_ACTION_CLASS_NAME,
@@ -1298,7 +1299,7 @@ function App() {
                       <p className="m-0 font-semibold text-text">{analysisModeLabel(job.mode)}</p>
                       <p className="m-0 break-words text-sm text-text-secondary">
                         <span
-                          className="mr-2 inline-block size-3.5 animate-spin rounded-full border-2 border-border border-t-accent align-[-2px] motion-reduce:animate-none"
+                          className={`mr-2 ${loadingSpinnerClasses}`}
                           aria-hidden="true"
                         />
                         {job.stage} · {job.elapsedSeconds.toFixed(1)} seconds elapsed.
@@ -1377,7 +1378,7 @@ function App() {
             statusMessage.startsWith("Computing") ||
             statusMessage.startsWith("Starting") ? (
               <span
-                className="mr-2 inline-block size-3.5 shrink-0 animate-spin rounded-full border-2 border-border border-t-accent motion-reduce:animate-none"
+                className={`mr-2 ${loadingSpinnerClasses}`}
                 aria-hidden="true"
               />
             ) : null}
