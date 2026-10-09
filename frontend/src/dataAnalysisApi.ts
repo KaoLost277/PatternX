@@ -1,4 +1,6 @@
 import type { RowColumnMode } from "./rowColumnMode";
+import { serializeRowColumnFilters } from "./rowFilters";
+import type { RowColumnFilters } from "./rowFilters";
 
 export type DataAnalysisKind = "formal_terms" | "group_data";
 export type DataAnalysisState = "running" | "succeeded" | "failed" | "cancelled";
@@ -167,13 +169,17 @@ export async function cancelDataAnalysisJob(jobId: string): Promise<DataAnalysis
   return await readResponseBody(response, "The data analysis could not be cancelled.");
 }
 
-function detailQuery(target: DataAnalysisDetailTarget): string {
+function detailQuery(target: DataAnalysisDetailTarget, filters: RowColumnFilters): string {
   const parameters = new URLSearchParams({
     target_kind: target.kind,
     item_index: String(target.itemIndex),
   });
   if (target.columnIndex !== undefined) {
     parameters.set("column_index", String(target.columnIndex));
+  }
+  const serializedFilters = serializeRowColumnFilters(filters);
+  if (serializedFilters !== null) {
+    parameters.set("filters", serializedFilters);
   }
   return parameters.toString();
 }
@@ -183,13 +189,14 @@ export async function fetchDataAnalysisRowsPage(
   target: DataAnalysisDetailTarget,
   page: number,
   signal: AbortSignal,
+  filters: RowColumnFilters = {},
 ): Promise<DataAnalysisRowsPage> {
   let response: Response;
   try {
-    response = await fetch(
-      `/api/data-analysis-jobs/${encodeURIComponent(jobId)}/rows?${detailQuery(target)}&page=${page}`,
-      { signal },
-    );
+    const rowsUrl =
+      `/api/data-analysis-jobs/${encodeURIComponent(jobId)}/rows?` +
+      `${detailQuery(target, filters)}&page=${page}`;
+    response = await fetch(rowsUrl, { signal });
   } catch {
     if (signal.aborted) {
       throw new DOMException("The request was aborted.", "AbortError");
@@ -209,10 +216,14 @@ export async function downloadDataAnalysisRowsCsv(
   analysisKind: DataAnalysisKind,
   target: DataAnalysisDetailTarget,
   columnMode: RowColumnMode = "all",
+  filters: RowColumnFilters = {},
 ): Promise<void> {
-  const columnModeQuery = columnMode === "analysis" ? "&column_mode=analysis" : "";
-  const exportUrl =
-    `/api/data-analysis-jobs/${encodeURIComponent(jobId)}/exports/rows.csv?${detailQuery(target)}${columnModeQuery}`;
+  const queryParameters = new URLSearchParams(detailQuery(target, filters));
+  if (columnMode === "analysis") {
+    queryParameters.set("column_mode", "analysis");
+  }
+  const exportPath = `/api/data-analysis-jobs/${encodeURIComponent(jobId)}/exports/rows.csv`;
+  const exportUrl = `${exportPath}?${queryParameters.toString()}`;
 
   let response: Response;
   try {

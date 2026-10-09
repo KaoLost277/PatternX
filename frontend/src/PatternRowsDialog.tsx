@@ -4,6 +4,7 @@ import { InputRowsTable } from "./InputRowsTable";
 import { RowColumnModeSelector } from "./RowColumnModeSelector";
 import { projectVisibleRows } from "./rowColumnMode";
 import type { RowColumnMode } from "./rowColumnMode";
+import type { RowColumnFilters } from "./rowFilters";
 import {
   dialogClasses,
   dialogHeadingClasses,
@@ -20,6 +21,8 @@ interface PatternRowsDialogProps {
   analysisColumns: string[];
   columnMode: RowColumnMode;
   onColumnModeChange: (mode: RowColumnMode) => void;
+  filters: RowColumnFilters;
+  onFiltersChanged: (filters: RowColumnFilters) => void;
   page: PatternRowsPage | null;
   requestedPage: number;
   loading: boolean;
@@ -38,6 +41,8 @@ export function PatternRowsDialog({
   analysisColumns,
   columnMode,
   onColumnModeChange,
+  filters,
+  onFiltersChanged,
   page,
   requestedPage,
   loading,
@@ -66,6 +71,16 @@ export function PatternRowsDialog({
   const totalRows = page?.total_rows ?? patternCount;
   const pageSize = page?.page_size ?? 50;
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
+  const filtersActive = Object.keys(filters).length > 0;
+  let exportButtonLabel = "Download all matching rows as CSV";
+  let exportButtonAriaLabel = "Download all matching Input Rows as CSV";
+  if (exportLoading) {
+    exportButtonLabel = "Preparing CSV download...";
+    exportButtonAriaLabel = "Preparing CSV download";
+  } else if (filtersActive) {
+    exportButtonLabel = "Download filtered rows as CSV";
+    exportButtonAriaLabel = "Download all Input Rows matching the current filters as CSV";
+  }
   const previousPageAvailable = requestedPage > 1;
   const nextPageAvailable = requestedPage < pageCount;
   const visibleRows = projectVisibleRows(
@@ -106,11 +121,11 @@ export function PatternRowsDialog({
         <button
           type="button"
           className={primaryButtonClasses}
-          aria-label="Download all matching Input Rows as CSV"
+          aria-label={exportButtonAriaLabel}
           disabled={exportLoading}
           onClick={() => onExport(columnMode)}
         >
-          {exportLoading ? "Preparing CSV download..." : "Download all matching rows as CSV"}
+          {exportButtonLabel}
         </button>
         {exportLoading && (
           <p className={statusTextClasses} role="status">
@@ -151,28 +166,45 @@ export function PatternRowsDialog({
       {!loading && error === null && page !== null && page.total_rows === 0 && (
         <div className="grid justify-items-start gap-3">
           <p className={hintTextClasses} role="status">
-            No Input Rows were found for this Completeness Pattern.
+            {filtersActive
+              ? "No Input Rows match the current filters for this Completeness Pattern."
+              : "No Input Rows were found for this Completeness Pattern."}
           </p>
-          <button
-            type="button"
-            className={secondaryButtonClasses}
-            onClick={handleCloseButtonClicked}
-          >
-            Return to summary
-          </button>
+          {filtersActive ? (
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              onClick={() => onFiltersChanged({})}
+            >
+              Clear all filters
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              onClick={handleCloseButtonClicked}
+            >
+              Return to summary
+            </button>
+          )}
         </div>
       )}
 
       {!loading && error === null && page !== null && page.total_rows > 0 && (
         <div className="grid min-w-0 gap-4">
           <p className={statusTextClasses}>
-            Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()} matching Input Rows.
-            Source columns and rows are shown in their original order.
+            Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()}{" "}
+            {filtersActive
+              ? `of ${patternCount.toLocaleString()} Input Rows match the current filters.`
+              : "matching Input Rows."}
+            {" "}Source columns and rows are shown in their original order.
           </p>
           <InputRowsTable
             ariaLabel="Input Rows table. Scroll to view additional columns or rows."
             columns={visibleRows.columns}
             rows={visibleRows.rows}
+            filters={filters}
+            onFiltersChanged={onFiltersChanged}
           />
         </div>
       )}

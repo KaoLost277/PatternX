@@ -272,6 +272,8 @@ test("data-analysis row details render source values as inert text", async () =>
       columnMode: "all",
       analysisColumns: ["value"],
       onColumnModeChange: () => {},
+      filters: {},
+      onFiltersChanged: () => {},
       page: {
         columns: ["<img src=x onerror=alert(1)>", "value"],
         rows: [["<script>unsafe</script>", "safe"]],
@@ -312,6 +314,8 @@ test("shared data-analysis row details distinguish loading, empty, error, and ex
     columnMode: "all",
     analysisColumns: [],
     onColumnModeChange: () => {},
+    filters: {},
+    onFiltersChanged: () => {},
     page: null,
     requestedPage: 1,
     loading: false,
@@ -334,6 +338,10 @@ test("shared data-analysis row details distinguish loading, empty, error, and ex
   const emptyMarkup = renderDialog({
     page: { columns: ["source"], rows: [], page: 1, page_size: 50, total_rows: 0 },
   });
+  const filteredEmptyMarkup = renderDialog({
+    filters: { department: { kind: "contains", value: "Finance" } },
+    page: { columns: ["source"], rows: [], page: 1, page_size: 50, total_rows: 0 },
+  });
   const errorMarkup = renderDialog({ error: "The matching rows could not be retrieved." });
   const exportLoadingMarkup = renderDialog({ exportLoading: true });
   const exportErrorMarkup = renderDialog({ exportError: "The CSV could not be downloaded." });
@@ -345,12 +353,15 @@ test("shared data-analysis row details distinguish loading, empty, error, and ex
   assert.match(emptyMarkup, /No Input Rows match/);
   assert.match(emptyMarkup, /Return to summary/);
   assert.doesNotMatch(emptyMarkup, /<table/);
+  assert.match(filteredEmptyMarkup, /No Input Rows match the current filters/);
+  assert.match(filteredEmptyMarkup, /Clear all filters/);
+  assert.doesNotMatch(filteredEmptyMarkup, /Return to summary/);
   assert.match(errorMarkup, /role="alert"/);
   assert.match(errorMarkup, /The matching rows could not be retrieved\./);
   assert.match(errorMarkup, /Retry loading rows/);
 
   const exportButton = exportLoadingMarkup.match(
-    /<button[^>]*aria-label="Download all matching Input Rows as CSV"[^>]*>/,
+    /<button[^>]*aria-label="Preparing CSV download"[^>]*>/,
   )?.[0];
   assert.ok(exportButton);
   assert.match(exportButton, /\sdisabled=""/);
@@ -373,6 +384,8 @@ test("data-analysis details can render only the completed analysis columns", asy
       columnMode: "analysis",
       analysisColumns: ["value"],
       onColumnModeChange: () => {},
+      filters: {},
+      onFiltersChanged: () => {},
       page: {
         columns: ["record_id", "value", "unselected"],
         rows: [["A1", "example", "not used"]],
@@ -397,7 +410,7 @@ test("data-analysis details can render only the completed analysis columns", asy
   )?.[1];
 
   assert.ok(tableRegion);
-  assert.match(tableRegion, /<th[^>]*>value<\/th>[\s\S]*?<td[^>]*><span[^>]*>example<\/span><\/td>/);
+  assert.match(tableRegion, /aria-label="Filter value"[\s\S]*?<td[^>]*><span[^>]*>example<\/span><\/td>/);
   assert.doesNotMatch(tableRegion, /record_id|A1|unselected|not used/);
   assert.equal((tableRegion.match(/<th\b/g) ?? []).length, 1);
   assert.equal((tableRegion.match(/<td\b/g) ?? []).length, 1);
@@ -409,6 +422,7 @@ test("data-analysis row requests include the selected result target and page", a
   );
   const previousFetch = globalThis.fetch;
   const requestSignal = new AbortController().signal;
+  const filters = { notes: { kind: "contains", value: "A&B" } };
   let requestedUrl = "";
   let requestedSignal;
   globalThis.fetch = async (url, options) => {
@@ -432,12 +446,16 @@ test("data-analysis row requests include the selected result target and page", a
       { kind: "term", columnIndex: 1, itemIndex: 4 },
       2,
       requestSignal,
+      filters,
     );
 
-    assert.equal(
-      requestedUrl,
-      "/api/data-analysis-jobs/job-123/rows?target_kind=term&item_index=4&column_index=1&page=2",
-    );
+    const requestUrl = new URL(requestedUrl, "http://localhost");
+    assert.equal(requestUrl.pathname, "/api/data-analysis-jobs/job-123/rows");
+    assert.equal(requestUrl.searchParams.get("target_kind"), "term");
+    assert.equal(requestUrl.searchParams.get("item_index"), "4");
+    assert.equal(requestUrl.searchParams.get("column_index"), "1");
+    assert.equal(requestUrl.searchParams.get("page"), "2");
+    assert.equal(requestUrl.searchParams.get("filters"), JSON.stringify(filters));
     assert.equal(requestedSignal, requestSignal);
     assert.equal(page.page, 2);
     assert.equal(page.total_rows, 51);
@@ -446,7 +464,7 @@ test("data-analysis row requests include the selected result target and page", a
   }
 });
 
-test("data-analysis CSV exports request the active column mode", async () => {
+test("data-analysis CSV exports preserve column mode and row filters", async () => {
   const { downloadDataAnalysisRowsCsv } = await viteServer.ssrLoadModule(
     "/src/dataAnalysisApi.ts",
   );
@@ -461,19 +479,24 @@ test("data-analysis CSV exports request the active column mode", async () => {
   };
 
   try {
+    const filters = { record_id: { kind: "missing" } };
     await assert.rejects(
       downloadDataAnalysisRowsCsv(
         "job-123",
         "formal_terms",
         { kind: "term", columnIndex: 2, itemIndex: 7 },
         "analysis",
+        filters,
       ),
       /Expected export failure for request inspection\./,
     );
-    assert.equal(
-      requestedUrl,
-      "/api/data-analysis-jobs/job-123/exports/rows.csv?target_kind=term&item_index=7&column_index=2&column_mode=analysis",
-    );
+    const requestUrl = new URL(requestedUrl, "http://localhost");
+    assert.equal(requestUrl.pathname, "/api/data-analysis-jobs/job-123/exports/rows.csv");
+    assert.equal(requestUrl.searchParams.get("target_kind"), "term");
+    assert.equal(requestUrl.searchParams.get("item_index"), "7");
+    assert.equal(requestUrl.searchParams.get("column_index"), "2");
+    assert.equal(requestUrl.searchParams.get("column_mode"), "analysis");
+    assert.equal(requestUrl.searchParams.get("filters"), JSON.stringify(filters));
   } finally {
     globalThis.fetch = previousFetch;
   }
