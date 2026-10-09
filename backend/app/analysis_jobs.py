@@ -35,6 +35,7 @@ from app.patterns import (
     PatternSummary,
     compute_pattern_summary,
 )
+from app.row_details import ColumnMode, source_columns_for_mode
 from app.sqlite_storage import (
     CSVFileError,
     CSVImportCancelledError,
@@ -204,10 +205,19 @@ class AnalysisJob:
         with self._lock:
             clean_up_job(self.job_directory)
 
-    def _pattern_rows_query(self, pattern: CompletenessPattern) -> tuple[str, list[int]]:
+    def _pattern_rows_query(
+        self,
+        pattern: CompletenessPattern,
+        column_mode: ColumnMode = "all",
+    ) -> tuple[str, list[int]]:
+        visible_source_columns = source_columns_for_mode(
+            self.analysis_inputs.column_names,
+            self.analysis_inputs.analysis_columns,
+            column_mode,
+        )
         source_columns = [
-            sqlite_column_name(column_index)
-            for column_index in range(len(self.analysis_inputs.column_names))
+            sqlite_column_name(self.analysis_inputs.column_names.index(column_name))
+            for column_name in visible_source_columns
         ]
         status_conditions = []
         for column_name in self.analysis_inputs.analysis_columns:
@@ -268,6 +278,7 @@ class AnalysisJob:
     def open_pattern_rows_export(
         self,
         pattern_index: int,
+        column_mode: ColumnMode = "all",
     ) -> tuple[list[str], PatternRowsExportRows]:
         """Open a streamed source-ordered export for one completed pattern."""
         self._lock.acquire()
@@ -289,10 +300,15 @@ class AnalysisJob:
                 self.analysis_inputs.missing_markers_by_column,
             )
 
-            query, expected_status_values = self._pattern_rows_query(pattern)
+            query, expected_status_values = self._pattern_rows_query(pattern, column_mode)
             cursor = connection.execute(query, expected_status_values)
             rows = PatternRowsExportRows(cursor, connection, self._lock)
-            return list(self.analysis_inputs.column_names), rows
+            visible_source_columns = source_columns_for_mode(
+                self.analysis_inputs.column_names,
+                self.analysis_inputs.analysis_columns,
+                column_mode,
+            )
+            return visible_source_columns, rows
         except BaseException:
             try:
                 if connection is not None:

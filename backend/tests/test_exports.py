@@ -274,7 +274,7 @@ def test_pattern_rows_export_includes_all_source_ordered_rows_as_inert_csv():
             if row_index == 0
             else f"note-{row_index}-" + ("x" * 120)
         )
-        source_rows.append([record_id, formula_value, "matched", notes])
+        source_rows.append([record_id, formula_value, f"matched-{row_index:03}", notes])
     source_rows.append(["other-pattern", "plain", "", "not exported"])
 
     source = io.StringIO(newline="")
@@ -304,6 +304,10 @@ def test_pattern_rows_export_includes_all_source_ordered_rows_as_inert_csv():
         f"/api/analysis-jobs/{status['job_id']}/patterns/{matching_pattern_index}/rows?page=14"
     )
     response = download_pattern_rows_export(client, status["job_id"], matching_pattern_index)
+    analysis_columns_response = client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/{matching_pattern_index}/exports/rows.csv",
+        params={"column_mode": "analysis"},
+    )
 
     assert first_page.status_code == 200
     assert len(first_page.json()["rows"]) == 50
@@ -313,6 +317,7 @@ def test_pattern_rows_export_includes_all_source_ordered_rows_as_inert_csv():
     assert last_page.json()["page"] == 14
     assert len(last_page.json()["rows"]) == 3
     assert response.status_code == 200
+    assert analysis_columns_response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert response.headers["content-disposition"] == (
         f'attachment; filename="pattern_rows_{matching_pattern_index + 1}.csv"'
@@ -330,7 +335,7 @@ def test_pattern_rows_export_includes_all_source_ordered_rows_as_inert_csv():
         [
             "'=1+1" if row_index == 0 else f"repeated-id-{row_index % 3}",
             "' =SUM(A1:A2)" if row_index == 1 else f"value-{row_index}",
-            "matched",
+            f"matched-{row_index:03}",
             'comma, quote " and\na second line'
             if row_index == 0
             else f"note-{row_index}-" + ("x" * 120),
@@ -340,6 +345,12 @@ def test_pattern_rows_export_includes_all_source_ordered_rows_as_inert_csv():
     assert len(exported_rows) == 654
     assert '"comma, quote "" and\na second line"' in exported_text
     assert exported_text.endswith("\r\n")
+
+    analysis_export_rows = parse_export_csv(analysis_columns_response)
+    assert analysis_export_rows[0] == ["analysis"]
+    assert analysis_export_rows[1:] == [
+        [f"matched-{row_index:03}"] for row_index in range(653)
+    ]
 
 
 def test_pattern_rows_export_rejects_unknown_job_pattern_and_failed_analysis(tmp_path):

@@ -1,6 +1,9 @@
 import { useEffect, useId, useRef } from "react";
 import type { DataAnalysisRowsPage } from "./dataAnalysisApi";
 import { InputRowsTable } from "./InputRowsTable";
+import { RowColumnModeSelector } from "./RowColumnModeSelector";
+import { visibleColumnIndexes } from "./rowColumnMode";
+import type { RowColumnMode } from "./rowColumnMode";
 import {
   dialogClasses,
   dialogHeadingClasses,
@@ -16,6 +19,9 @@ interface DataAnalysisRowsDialogProps {
   title: string;
   targetDescription: string;
   matchingRowCount: number;
+  analysisColumns: string[];
+  columnMode: RowColumnMode;
+  onColumnModeChange: (mode: RowColumnMode) => void;
   page: DataAnalysisRowsPage | null;
   requestedPage: number;
   loading: boolean;
@@ -25,7 +31,7 @@ interface DataAnalysisRowsDialogProps {
   exportLoading: boolean;
   exportError: string | null;
   exportSuccess: string | null;
-  onExport: () => void;
+  onExport: (mode: RowColumnMode) => void;
   onClose: () => void;
 }
 
@@ -33,6 +39,9 @@ export function DataAnalysisRowsDialog({
   title,
   targetDescription,
   matchingRowCount,
+  analysisColumns,
+  columnMode,
+  onColumnModeChange,
   page,
   requestedPage,
   loading,
@@ -62,6 +71,11 @@ export function DataAnalysisRowsDialog({
   const totalRows = page?.total_rows ?? matchingRowCount;
   const pageSize = page?.page_size ?? 50;
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
+  const visibleIndexes = visibleColumnIndexes(
+    page?.columns ?? [],
+    analysisColumns,
+    columnMode,
+  );
 
   return (
     <dialog
@@ -96,7 +110,7 @@ export function DataAnalysisRowsDialog({
           className={primaryButtonClasses}
           aria-label="Download all matching Input Rows as CSV"
           disabled={exportLoading}
-          onClick={onExport}
+          onClick={() => onExport(columnMode)}
         >
           {exportLoading ? "Preparing CSV download..." : "Download all matching rows as CSV"}
         </button>
@@ -117,6 +131,8 @@ export function DataAnalysisRowsDialog({
           </p>
         )}
       </div>
+
+      <RowColumnModeSelector mode={columnMode} onChange={onColumnModeChange} />
 
       {loading && (
         <p className={statusTextClasses} role="status">
@@ -157,8 +173,10 @@ export function DataAnalysisRowsDialog({
           </p>
           <InputRowsTable
             ariaLabel="Matching Input Rows. Scroll to view additional columns or rows."
-            columns={page.columns}
-            rows={page.rows}
+            columns={visibleIndexes.map((index) => page.columns[index])}
+            rows={page.rows.map((row) =>
+              visibleIndexes.map((index) => row[index] ?? null),
+            )}
           />
         </div>
       )}

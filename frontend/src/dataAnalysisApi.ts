@@ -1,3 +1,5 @@
+import type { RowColumnMode } from "./rowColumnMode";
+
 export type DataAnalysisKind = "formal_terms" | "group_data";
 export type DataAnalysisState = "running" | "succeeded" | "failed" | "cancelled";
 
@@ -206,9 +208,11 @@ export async function downloadDataAnalysisRowsCsv(
   jobId: string,
   analysisKind: DataAnalysisKind,
   target: DataAnalysisDetailTarget,
+  columnMode: RowColumnMode = "all",
 ): Promise<void> {
+  const columnModeQuery = columnMode === "analysis" ? "&column_mode=analysis" : "";
   const exportUrl =
-    `/api/data-analysis-jobs/${encodeURIComponent(jobId)}/exports/rows.csv?${detailQuery(target)}`;
+    `/api/data-analysis-jobs/${encodeURIComponent(jobId)}/exports/rows.csv?${detailQuery(target)}${columnModeQuery}`;
 
   let response: Response;
   try {

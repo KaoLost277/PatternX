@@ -4,6 +4,7 @@ import { AnalysisModeTabs } from "./AnalysisModeTabs";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { ColumnVisibilityPicker } from "./ColumnVisibilityPicker";
 import { PatternRowsDialog } from "./PatternRowsDialog";
+import type { RowColumnMode } from "./rowColumnMode";
 import { PatternStatusLabel } from "./PatternPreview";
 import { DataAnalysisPanel } from "./DataAnalysisPanel";
 import { cancelDataAnalysisJob } from "./dataAnalysisApi";
@@ -401,6 +402,7 @@ function App() {
   const [selectedPatternIndex, setSelectedPatternIndex] = useState<number | null>(null);
   const [selectedPatternPage, setSelectedPatternPage] = useState<number>(1);
   const [patternRowsPage, setPatternRowsPage] = useState<PatternRowsPage | null>(null);
+  const [patternRowsColumnMode, setPatternRowsColumnMode] = useState<RowColumnMode>("all");
   const [patternRowsLoading, setPatternRowsLoading] = useState<boolean>(false);
   const [patternRowsError, setPatternRowsError] = useState<string | null>(null);
   const [patternRowsRetryNumber, setPatternRowsRetryNumber] = useState<number>(0);
@@ -956,6 +958,7 @@ function App() {
   }
 
   function handlePatternPreviewOpened(patternIndex: number) {
+    setPatternRowsColumnMode("all");
     setSelectedPatternPage(1);
     setPatternRowsPage(null);
     setPatternRowsLoading(true);
@@ -984,7 +987,7 @@ function App() {
     setPatternRowsError(null);
   }
 
-  async function handlePatternRowsExport() {
+  async function handlePatternRowsExport(columnMode: RowColumnMode) {
     if (analysisJob === null || selectedPatternIndex === null) {
       setPatternRowsExportError(
         "The analysis job is no longer available. Run the analysis again to export these rows.",
@@ -996,7 +999,7 @@ function App() {
     setPatternRowsExportError(null);
     setPatternRowsExportSuccess(null);
     try {
-      await downloadPatternRowsCsv(analysisJob.job_id, selectedPatternIndex);
+      await downloadPatternRowsCsv(analysisJob.job_id, selectedPatternIndex, columnMode);
       setPatternRowsExportSuccess("CSV download started.");
     } catch (error: unknown) {
       setPatternRowsExportSuccess(null);
@@ -2007,6 +2010,9 @@ function App() {
         {activeAnalysisMode === "completeness" && patternSummary !== null && selectedPattern !== null && (
           <PatternRowsDialog
             patternCount={selectedPattern.count}
+            analysisColumns={patternSummary.analysis_columns}
+            columnMode={patternRowsColumnMode}
+            onColumnModeChange={setPatternRowsColumnMode}
             page={patternRowsPage}
             requestedPage={selectedPatternPage}
             loading={patternRowsDisplayLoading}

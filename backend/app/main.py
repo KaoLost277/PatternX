@@ -57,6 +57,7 @@ from app.patterns import (
     normalize_identifier_column,
     resolve_analysis_columns,
 )
+from app.row_details import ColumnMode
 from app.sqlite_storage import CSVFileError
 from app.workbooks import (
     CHOOSE_WORKSHEET_MESSAGE,
@@ -307,10 +308,17 @@ def create_application(
     @application.get(
         "/api/analysis-jobs/{job_id}/patterns/{pattern_index}/exports/rows.csv"
     )
-    async def download_pattern_rows_export(job_id: str, pattern_index: int) -> Response:
+    async def download_pattern_rows_export(
+        job_id: str,
+        pattern_index: int,
+        column_mode: ColumnMode = Query(default="all"),
+    ) -> Response:
         job = find_job_or_raise(job_id)
         try:
-            columns, matching_rows = job.open_pattern_rows_export(pattern_index)
+            columns, matching_rows = job.open_pattern_rows_export(
+                pattern_index,
+                column_mode,
+            )
         except (AnalysisNotSucceededError, PatternIndexNotFoundError) as error:
             raise pattern_rows_request_error(error, job_id, pattern_index) from error
 
@@ -369,6 +377,7 @@ def create_application(
         target_kind: str = Query(),
         item_index: int = Query(ge=0),
         column_index: int | None = Query(default=None, ge=0),
+        column_mode: ColumnMode = Query(default="all"),
     ) -> Response:
         job = find_data_analysis_job_or_raise(job_id)
         try:
@@ -376,6 +385,7 @@ def create_application(
                 target_kind,
                 item_index,
                 column_index,
+                column_mode,
             )
         except (DataAnalysisNotSucceededError, DataAnalysisTargetNotFoundError) as error:
             raise data_analysis_rows_request_error(error, job_id) from error

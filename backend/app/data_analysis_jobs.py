@@ -28,6 +28,7 @@ from app.data_analyses import (
     value_function_name,
 )
 from app.patterns import AnalysisCancelledError
+from app.row_details import ColumnMode, source_columns_for_mode
 from app.sqlite_storage import CSVFileError, CSVImportCancelledError, load_csv_into_database, open_analysis_database
 from app.workfiles import clean_up_job, clean_up_job_sources
 
@@ -241,6 +242,7 @@ class DataAnalysisJob:
         target_kind: str,
         item_index: int,
         column_index: int | None,
+        column_mode: ColumnMode = "all",
     ) -> tuple[list[str], DataAnalysisRowsExport]:
         self._lock.acquire()
         connection: sqlite3.Connection | None = None
@@ -248,7 +250,12 @@ class DataAnalysisJob:
             if self.state != JOB_STATE_SUCCEEDED or self.result is None:
                 raise DataAnalysisNotSucceededError()
 
-            query, parameters, _ = self._rows_query(target_kind, item_index, column_index)
+            query, parameters, _ = self._rows_query(
+                target_kind,
+                item_index,
+                column_index,
+                column_mode,
+            )
             database_uri = self.analysis_inputs.database_path.resolve().as_uri() + "?mode=ro"
             connection = sqlite3.connect(database_uri, uri=True, check_same_thread=False)
             register_data_value_functions(
@@ -261,7 +268,12 @@ class DataAnalysisJob:
                 connection,
                 self._lock,
             )
-            return list(self.analysis_inputs.column_names), rows
+            visible_source_columns = source_columns_for_mode(
+                self.analysis_inputs.column_names,
+                self.result.selected_columns,
+                column_mode,
+            )
+            return visible_source_columns, rows
         except BaseException:
             try:
                 if connection is not None:
@@ -275,6 +287,7 @@ class DataAnalysisJob:
         target_kind: str,
         item_index: int,
         column_index: int | None,
+        column_mode: ColumnMode = "all",
     ) -> tuple[str, list[object], int]:
         if self.result is None:
             raise DataAnalysisNotSucceededError()
@@ -323,9 +336,14 @@ class DataAnalysisJob:
         else:
             raise DataAnalysisTargetNotFoundError()
 
+        visible_source_columns = source_columns_for_mode(
+            self.analysis_inputs.column_names,
+            self.result.selected_columns,
+            column_mode,
+        )
         source_columns = [
-            sqlite_column_name(index)
-            for index in range(len(self.analysis_inputs.column_names))
+            sqlite_column_name(self.analysis_inputs.column_names.index(column_name))
+            for column_name in visible_source_columns
         ]
         query = (
             f'SELECT {", ".join(source_columns)} FROM "input_rows" '

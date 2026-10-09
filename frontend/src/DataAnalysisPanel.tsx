@@ -19,6 +19,7 @@ import type {
   GroupDataSummary,
 } from "./dataAnalysisApi";
 import { DataAnalysisRowsDialog } from "./DataAnalysisRowsDialog";
+import type { RowColumnMode } from "./rowColumnMode";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { formatShare } from "./displayFormat";
 import {
@@ -110,6 +111,7 @@ export function DataAnalysisPanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [detail, setDetail] = useState<SelectedDetail | null>(null);
+  const [detailColumnMode, setDetailColumnMode] = useState<RowColumnMode>("all");
   const [detailPage, setDetailPage] = useState<DataAnalysisRowsPage | null>(null);
   const [detailPageNumber, setDetailPageNumber] = useState(1);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -300,6 +302,7 @@ export function DataAnalysisPanel({
 
   function handleDetailOpened(nextDetail: SelectedDetail) {
     setDetail(nextDetail);
+    setDetailColumnMode("all");
     setDetailPage(null);
     setDetailPageNumber(1);
     setDetailLoading(true);
@@ -326,7 +329,7 @@ export function DataAnalysisPanel({
     onError(null);
   }
 
-  async function handleDetailExport() {
+  async function handleDetailExport(columnMode: RowColumnMode) {
     if (job === null || detail === null) {
       return;
     }
@@ -335,7 +338,12 @@ export function DataAnalysisPanel({
     setExportError(null);
     setExportSuccess(null);
     try {
-      await downloadDataAnalysisRowsCsv(job.job_id, analysisKind, detail.target);
+      await downloadDataAnalysisRowsCsv(
+        job.job_id,
+        analysisKind,
+        detail.target,
+        columnMode,
+      );
       setExportSuccess("CSV download started.");
     } catch (error: unknown) {
       const message =
@@ -352,6 +360,7 @@ export function DataAnalysisPanel({
   function handleDetailClosed() {
     setDetail(null);
     setDetailPage(null);
+    setDetailColumnMode("all");
   }
 
   function handleShowAllTerms(columnName: string) {
@@ -496,6 +505,13 @@ export function DataAnalysisPanel({
           title={detail.title}
           targetDescription={detail.description}
           matchingRowCount={detail.count}
+          analysisColumns={
+            job.state === JOB_STATE_SUCCEEDED && job.result !== null
+              ? job.result.selected_columns
+              : []
+          }
+          columnMode={detailColumnMode}
+          onColumnModeChange={setDetailColumnMode}
           page={detailPage}
           requestedPage={detailPageNumber}
           loading={detailLoading}

@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { PatternRowsPage } from "./patternRows";
 import { InputRowsTable } from "./InputRowsTable";
+import { RowColumnModeSelector } from "./RowColumnModeSelector";
+import { visibleColumnIndexes } from "./rowColumnMode";
+import type { RowColumnMode } from "./rowColumnMode";
 import {
   dialogClasses,
   dialogHeadingClasses,
@@ -14,6 +17,9 @@ import {
 
 interface PatternRowsDialogProps {
   patternCount: number;
+  analysisColumns: string[];
+  columnMode: RowColumnMode;
+  onColumnModeChange: (mode: RowColumnMode) => void;
   page: PatternRowsPage | null;
   requestedPage: number;
   loading: boolean;
@@ -23,12 +29,15 @@ interface PatternRowsDialogProps {
   exportLoading: boolean;
   exportError: string | null;
   exportSuccess: string | null;
-  onExport: () => void;
+  onExport: (mode: RowColumnMode) => void;
   onClose: () => void;
 }
 
 export function PatternRowsDialog({
   patternCount,
+  analysisColumns,
+  columnMode,
+  onColumnModeChange,
   page,
   requestedPage,
   loading,
@@ -59,6 +68,11 @@ export function PatternRowsDialog({
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
   const previousPageAvailable = requestedPage > 1;
   const nextPageAvailable = requestedPage < pageCount;
+  const visibleIndexes = visibleColumnIndexes(
+    page?.columns ?? [],
+    analysisColumns,
+    columnMode,
+  );
 
   return (
     <dialog
@@ -93,7 +107,7 @@ export function PatternRowsDialog({
           className={primaryButtonClasses}
           aria-label="Download all matching Input Rows as CSV"
           disabled={exportLoading}
-          onClick={onExport}
+          onClick={() => onExport(columnMode)}
         >
           {exportLoading ? "Preparing CSV download..." : "Download all matching rows as CSV"}
         </button>
@@ -114,6 +128,8 @@ export function PatternRowsDialog({
           </p>
         )}
       </div>
+
+      <RowColumnModeSelector mode={columnMode} onChange={onColumnModeChange} />
 
       {loading && (
         <p className={statusTextClasses} role="status">
@@ -154,8 +170,10 @@ export function PatternRowsDialog({
           </p>
           <InputRowsTable
             ariaLabel="Input Rows table. Scroll to view additional columns or rows."
-            columns={page.columns}
-            rows={page.rows}
+            columns={visibleIndexes.map((index) => page.columns[index])}
+            rows={page.rows.map((row) =>
+              visibleIndexes.map((index) => row[index] ?? null),
+            )}
           />
         </div>
       )}
