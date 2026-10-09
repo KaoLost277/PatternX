@@ -123,6 +123,7 @@ export function PatternPreview({
                 <SortableHeader
                   key={columnIndex}
                   label={columnName}
+                  className="sticky top-0 z-10 bg-surface-muted"
                   sortKey={`value:${columnIndex}`}
                   sortState={activePreviewSort}
                   onSort={handlePreviewSortChanged}
