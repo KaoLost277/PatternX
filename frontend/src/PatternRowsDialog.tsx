@@ -1,6 +1,16 @@
 import { useEffect, useRef } from "react";
 import type { PatternRowsPage } from "./patternRows";
-import "./PatternRowsDialog.css";
+import {
+  dialogClasses,
+  errorMessageClasses,
+  hintTextClasses,
+  loadingSpinnerClasses,
+  primaryButtonClasses,
+  secondaryButtonClasses,
+  separatedSummaryTableClasses,
+  statusTextClasses,
+  summaryTableFrameClasses,
+} from "./uiClasses";
 
 interface PatternRowsDialogProps {
   patternCount: number;
@@ -53,21 +63,21 @@ export function PatternRowsDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="pattern-rows-dialog"
+      className={dialogClasses}
       aria-labelledby="pattern-rows-dialog-title"
       aria-describedby="pattern-rows-dialog-description"
       onClose={onClose}
     >
-      <div className="pattern-rows-dialog-header">
+      <div className="flex min-w-0 items-start justify-between gap-5 max-sm:gap-3">
         <div>
           <h2 id="pattern-rows-dialog-title">Input Rows for a Completeness Pattern</h2>
-          <p id="pattern-rows-dialog-description" className="status-line">
+          <p id="pattern-rows-dialog-description" className={`${statusTextClasses} mt-2`}>
             {patternCount.toLocaleString()} Input Rows share this pattern.
           </p>
         </div>
         <button
           type="button"
-          className="secondary-button"
+          className={secondaryButtonClasses}
           aria-label="Close pattern details"
           onClick={handleCloseButtonClicked}
         >
@@ -75,10 +85,10 @@ export function PatternRowsDialog({
         </button>
       </div>
 
-      <div className="pattern-rows-export">
+      <div className="grid min-w-0 justify-items-start gap-4">
         <button
           type="button"
-          className="primary-button"
+          className={primaryButtonClasses}
           aria-label="Download all matching Input Rows as CSV"
           disabled={exportLoading}
           onClick={onExport}
@@ -86,62 +96,62 @@ export function PatternRowsDialog({
           {exportLoading ? "Preparing CSV download..." : "Download all matching rows as CSV"}
         </button>
         {exportLoading && (
-          <p className="status-line" role="status">
-            <span className="loading-spinner" aria-hidden="true" />
+          <p className={statusTextClasses} role="status">
+            <span className={loadingSpinnerClasses} aria-hidden="true" />
             Preparing the full pattern export...
           </p>
         )}
         {exportError !== null && (
-          <p className="error-message pattern-rows-export-error" role="alert">
+          <p className={errorMessageClasses} role="alert">
             {exportError}
           </p>
         )}
         {exportSuccess !== null && (
-          <p className="status-line" role="status">
+          <p className={statusTextClasses} role="status">
             {exportSuccess}
           </p>
         )}
       </div>
 
       {loading && (
-        <p className="status-line" role="status">
-          <span className="loading-spinner" aria-hidden="true" />
+        <p className={statusTextClasses} role="status">
+          <span className={loadingSpinnerClasses} aria-hidden="true" />
           Loading Input Rows for this pattern...
         </p>
       )}
 
       {error !== null && (
-        <div className="error-message pattern-rows-error" role="alert">
+        <div className={`${errorMessageClasses} grid justify-items-start gap-3`} role="alert">
           <p>{error}</p>
-          <button type="button" className="secondary-button" onClick={onRetry}>
+          <button type="button" className={secondaryButtonClasses} onClick={onRetry}>
             Retry loading rows
           </button>
         </div>
       )}
 
       {!loading && error === null && page !== null && page.total_rows === 0 && (
-        <p className="hint-text" role="status">
+        <p className={hintTextClasses} role="status">
           No Input Rows were found for this Completeness Pattern.
         </p>
       )}
 
       {!loading && error === null && page !== null && page.total_rows > 0 && (
-        <div className="preview-panel">
-          <p className="status-line">
+        <div className="grid min-w-0 gap-4">
+          <p className={statusTextClasses}>
             Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()} matching Input Rows.
             Source columns and rows are shown in their original order.
           </p>
           <div
-            className="summary-table-frame preview-table-frame"
+            className={`${summaryTableFrameClasses} max-h-[min(56vh,35rem)] overflow-auto overscroll-contain`}
             role="region"
             aria-label="Input Rows table. Scroll to view additional columns or rows."
             tabIndex={0}
           >
-            <table className="summary-table preview-table pattern-rows-table">
+            <table className={`${separatedSummaryTableClasses} min-w-max`}>
               <thead>
                 <tr>
                   {page.columns.map((columnName, columnIndex) => (
-                    <th key={columnIndex} scope="col">
+                    <th className="sticky top-0 z-10 min-w-32 bg-surface-muted" key={columnIndex} scope="col">
                       {columnName}
                     </th>
                   ))}
@@ -151,8 +161,8 @@ export function PatternRowsDialog({
                 {page.rows.map((row, rowIndex) => (
                   <tr key={rowIndex}>
                     {page.columns.map((_, columnIndex) => (
-                      <td key={columnIndex}>
-                        <span className="preview-value">{row[columnIndex] ?? "Not set"}</span>
+                      <td className="min-w-32" key={columnIndex}>
+                        <span className="break-words">{row[columnIndex] ?? "Not set"}</span>
                       </td>
                     ))}
                   </tr>
@@ -163,10 +173,10 @@ export function PatternRowsDialog({
         </div>
       )}
 
-      <nav className="pattern-rows-pagination" aria-label="Input Rows pages">
+      <nav className="flex flex-wrap items-center justify-between gap-3 max-sm:justify-center" aria-label="Input Rows pages">
         <button
           type="button"
-          className="secondary-button"
+          className={secondaryButtonClasses}
           disabled={!previousPageAvailable || loading}
           onClick={() => onPageChange(requestedPage - 1)}
         >
@@ -177,7 +187,7 @@ export function PatternRowsDialog({
         </span>
         <button
           type="button"
-          className="secondary-button"
+          className={secondaryButtonClasses}
           disabled={!nextPageAvailable || loading}
           onClick={() => onPageChange(requestedPage + 1)}
         >

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import "./App.css";
 import { AnalysisModeTabs } from "./AnalysisModeTabs";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { ColumnVisibilityPicker } from "./ColumnVisibilityPicker";
@@ -36,6 +35,16 @@ import {
   PATTERN_STATUS_MISSING,
   PATTERN_STATUS_PRESENT,
 } from "./patternStatus";
+import {
+  errorMessageClasses,
+  hintTextClasses,
+  primaryButtonClasses as PRIMARY_ACTION_CLASS_NAME,
+  secondaryButtonClasses as SECONDARY_ACTION_CLASS_NAME,
+  separatedSummaryTableClasses,
+  statusTextClasses,
+  summaryTableClasses,
+  summaryTableFrameClasses,
+} from "./uiClasses";
 
 interface ColumnCompleteness {
   name: string;
@@ -192,10 +201,6 @@ function formatShare(share: number): string {
 
 const PATTERN_FILTER_ANY = "any";
 const MOST_COMMON_PATTERNS_SHOWN = 10;
-const PRIMARY_ACTION_CLASS_NAME =
-  "inline-flex min-h-11 items-center justify-center rounded-control border border-action-primary bg-action-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-action-primary-hover active:bg-action-primary-hover active:translate-y-px focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60";
-const SECONDARY_ACTION_CLASS_NAME =
-  "inline-flex min-h-10 items-center justify-center rounded-control border border-border-strong bg-action-secondary px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-muted active:bg-surface-accent active:translate-y-px focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60";
 
 const JOB_STATE_RUNNING = "running";
 const JOB_STATE_SUCCEEDED = "succeeded";
@@ -1360,7 +1365,7 @@ function App() {
       ) : null}
 
         {statusMessage && statusMessage !== "Starting the analysis..." && (
-          <p className="m-0 flex min-w-0 items-center break-words text-sm text-text-secondary" role="status">
+          <p className={`${statusTextClasses} flex items-center`} role="status">
             {statusMessage.startsWith("Reading") ||
             statusMessage.startsWith("Computing") ||
             statusMessage.startsWith("Starting") ? (
@@ -1374,7 +1379,7 @@ function App() {
         )}
         {errorMessage && (
           <p
-            className="m-0 break-words rounded-control border border-error-border bg-error-surface px-4 py-3 text-sm text-error-text"
+            className={errorMessageClasses}
             role="alert"
           >
             {errorMessage}
@@ -1422,10 +1427,10 @@ function App() {
             )}
             {worksheetRowLimit !== null && (
               <details className="grid min-w-0 gap-2 text-sm text-text-secondary">
-                <summary className="min-h-10 cursor-pointer py-2 font-medium text-accent hover:text-accent-hover active:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+                <summary className="min-h-10 cursor-pointer list-none py-2 font-medium text-accent hover:text-accent-hover active:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
                   More details
                 </summary>
-                <p className="m-0 max-w-4xl break-words text-text-muted">
+                <p className="m-0 max-w-4xl break-words text-sm text-text-muted">
                   Excel&apos;s file format allows at most {worksheetRowLimit.toLocaleString()} worksheet
                   rows, including the header. Every row of the chosen worksheet is read; nothing is
                   truncated.
@@ -1440,7 +1445,7 @@ function App() {
                   is unmeasured; this warning does not limit the analysis.
                 </p>
                 <details className="grid gap-2 text-sm">
-                  <summary className="min-h-10 cursor-pointer py-2 font-medium hover:text-warning-text active:text-warning-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+                  <summary className="min-h-10 cursor-pointer list-none py-2 font-medium hover:text-warning-text active:text-warning-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
                     More details
                   </summary>
                   <p className="m-0 break-words">
@@ -1454,7 +1459,7 @@ function App() {
 
             {columnNames.length > 0 && (
               <details className="grid min-w-0 gap-3 border-t border-border pt-3 sm:col-span-2">
-                <summary className="min-h-10 cursor-pointer py-2 text-sm font-semibold text-text hover:text-accent active:text-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+                <summary className="min-h-10 cursor-pointer list-none py-2 text-sm font-semibold text-text hover:text-accent active:text-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
                   Columns in this file ({columnNames.length})
                 </summary>
                 <ul className="m-0 flex min-w-0 flex-wrap gap-2 p-0">
@@ -1471,7 +1476,7 @@ function App() {
             )}
           </div>
           <details className="group grid min-w-0 gap-3 border-t border-border pt-3">
-            <summary className="flex min-h-10 cursor-pointer flex-wrap items-center justify-between gap-2 rounded-control text-sm font-semibold text-text hover:text-accent active:text-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+            <summary className="flex min-h-10 cursor-pointer list-none flex-wrap items-center justify-between gap-2 rounded-control text-sm font-semibold text-text hover:text-accent active:text-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
               <span>Missing Value settings</span>
               <span className="text-sm font-normal text-text-muted">
                 {Object.values(appliedMissingValueMarkers).reduce(
@@ -1488,7 +1493,7 @@ function App() {
               <summary className="min-h-10 cursor-pointer py-2 font-medium text-accent hover:text-accent-hover active:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
                 More details
               </summary>
-              <p className="m-0 max-w-4xl break-words text-text-muted">
+                  <p className="m-0 max-w-4xl break-words text-sm text-text-muted">
                 Additional markers are matched after trimming surrounding spaces and without regard
                 to letter case. Changing these rules clears existing results so every mode uses the
                 same rules.
@@ -1509,11 +1514,11 @@ function App() {
                   aria-label="Missing Value markers by column"
                   tabIndex={0}
                 >
-                  <table className="w-full min-w-[34rem] border-collapse text-left text-sm text-text-secondary">
+                    <table className="w-full min-w-[34rem] border-collapse text-left text-sm text-text-secondary [&_th]:border-b [&_th]:border-border [&_th]:px-3 [&_th]:py-2.5 [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5">
                     <thead className="bg-surface-muted text-xs font-semibold uppercase tracking-wide text-text-secondary">
                       <tr>
-                        <th className="border-b border-border px-3 py-2.5" scope="col">Column</th>
-                        <th className="border-b border-border px-3 py-2.5" scope="col">
+                        <th scope="col">Column</th>
+                        <th scope="col">
                           Additional Missing Value markers
                         </th>
                       </tr>
@@ -1521,10 +1526,10 @@ function App() {
                     <tbody>
                       {columnNames.map((columnName, columnIndex) => (
                         <tr key={columnIndex}>
-                          <th className="border-b border-border px-3 py-2.5 font-medium text-text" scope="row">
+                          <th className="font-medium text-text" scope="row">
                             {columnName}
                           </th>
-                          <td className="border-b border-border px-3 py-2.5">
+                          <td>
                             <label className="sr-only" htmlFor={`missing-marker-${columnIndex}`}>
                               Additional Missing Value markers for {columnName}
                             </label>
@@ -1588,21 +1593,21 @@ function App() {
             open={expandedSections.columnCompleteness}
             onOpenChange={(open) => handleSectionOpenChanged("columnCompleteness", open)}
           >
-            <p className="status-line">
+            <p className={statusTextClasses}>
               {summary.input_rows.toLocaleString()} Input Rows. Null, empty, and whitespace-only
               values count as missing; zero counts as present.
             </p>
-            <p className="hint-text">
+            <p className={hintTextClasses}>
               This descriptive summary flags no value as a problem. Missing Value rules can be
               reviewed and updated in the shared settings above.
             </p>
             <div
-              className="summary-table-frame"
+              className={summaryTableFrameClasses}
               role="region"
               aria-label="Column Completeness Summary. Scroll to view all columns."
               tabIndex={0}
             >
-              <table className="summary-table">
+              <table className={summaryTableClasses}>
                 <thead>
                   <tr>
                     <SortableHeader
@@ -1659,23 +1664,24 @@ function App() {
               open={expandedSections.analysisSetup}
               onOpenChange={(open) => handleSectionOpenChanged("analysisSetup", open)}
             >
-            <p className="status-line">
+            <p className={statusTextClasses}>
               Choose an optional Identifier Column and select which columns to analyze.
             </p>
-            <details className="help-details">
-              <summary>More details</summary>
-              <p className="hint-text">
+            <details className="grid min-w-0 gap-2 text-sm text-text-secondary">
+              <summary className="min-h-10 cursor-pointer list-none py-2 font-medium text-accent hover:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">More details</summary>
+              <p className={hintTextClasses}>
                 The Identifier Column is for display only. It does not affect Input Row counts or
                 join the analysis. Rows with the same Completeness Pattern are grouped with their
                 exact count and share.
               </p>
             </details>
 
-            <form className="summary-form" onSubmit={handlePatternSubmit}>
-              <div className="selection-panel">
-                <label className="selection-field">
+            <form className="grid min-w-0 gap-5" onSubmit={handlePatternSubmit}>
+              <div className="grid gap-4 rounded-panel border border-border bg-surface-muted p-4 sm:p-panel">
+                <label className="grid min-w-0 gap-2 text-sm font-semibold text-text-secondary">
                   <span>Identifier Column (optional)</span>
                     <select
+                      className="min-h-11 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-sm font-normal text-text hover:border-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                       value={identifierColumn}
                       disabled={analysisRunning}
                       onChange={handleIdentifierColumnChanged}
@@ -1689,20 +1695,21 @@ function App() {
                   </select>
                 </label>
 
-                <fieldset className="analysis-fieldset" disabled={analysisRunning}>
+                <fieldset className="grid min-w-0 gap-3 border-0 p-0" disabled={analysisRunning}>
                   <legend>Columns to analyze</legend>
-                  <div className="analysis-options">
+                  <div className="flex flex-wrap gap-2">
                     {summary.columns.map((column, columnIndex) => (
                       <label
                         key={columnIndex}
                         className={
                           column.name === identifierColumn
-                            ? "analysis-option analysis-option-identifier"
-                            : "analysis-option"
+                            ? "flex min-h-10 cursor-not-allowed items-center gap-2 break-words rounded-control border border-dashed border-border-strong bg-surface-muted px-3 py-2 text-sm text-text-muted"
+                            : "flex min-h-10 cursor-pointer items-center gap-2 break-words rounded-control border border-border bg-surface px-3 py-2 text-sm text-text-secondary has-[:checked]:border-accent has-[:checked]:bg-surface-accent has-[:checked]:text-text has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus-ring"
                         }
                       >
                         <input
                           type="checkbox"
+                          className="shrink-0"
                           checked={analysisColumns.includes(column.name)}
                           disabled={column.name === identifierColumn}
                           onChange={() => handleAnalysisColumnToggled(column.name)}
@@ -1711,13 +1718,13 @@ function App() {
                       </label>
                     ))}
                   </div>
-                  <p className="hint-text">
+                  <p className={hintTextClasses}>
                     {identifierColumn.length > 0
                       ? `${identifierColumn} is used only to display Input Rows.`
                       : "The selected columns define one Completeness Pattern per Input Row."}
                   </p>
                   {selectedColumnCountExceedsBenchmark && (
-                    <p className="hint-text">
+                    <p className={hintTextClasses}>
                       This selection uses {columnsToAnalyze.length} columns; the largest recorded
                       benchmark used {MAX_BENCHMARKED_SELECTED_COLUMNS}. Runtime and memory use for
                       wider selections are unmeasured. This warning does not limit or truncate the
@@ -1728,17 +1735,18 @@ function App() {
               </div>
 
               {highCardinalityWarningRequired && (
-                <div className="warning-panel">
-                  <p className="warning-heading">This analysis has a very large pattern space</p>
-                  <p className="hint-text">
+                <div className="grid gap-3 rounded-panel border border-warning-border bg-warning-surface p-4 text-warning-text">
+                  <p className="m-0 font-semibold">This analysis has a very large pattern space</p>
+                  <p className="m-0 break-words text-sm">
                     Selecting {columnsToAnalyze.length} columns allows up to{" "}
                     {(2n ** BigInt(columnsToAnalyze.length)).toLocaleString()} distinct Completeness
                     Patterns. Review your selection, then acknowledge this warning before the
                     analysis starts.
                   </p>
-                  <label className="acknowledgement-option">
+                  <label className="flex cursor-pointer items-center gap-2 break-words text-sm">
                     <input
                       type="checkbox"
+                      className="shrink-0"
                       checked={highCardinalityAcknowledged}
                       disabled={analysisRunning}
                       onChange={handleHighCardinalityAcknowledgementChanged}
@@ -1748,8 +1756,8 @@ function App() {
                 </div>
               )}
 
-              <div className="summary-actions">
-                <button type="submit" className="primary-button" disabled={computeButtonDisabled}>
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="submit" className={PRIMARY_ACTION_CLASS_NAME} disabled={computeButtonDisabled}>
                   Compute Completeness Patterns
                 </button>
               </div>
@@ -1763,16 +1771,16 @@ function App() {
                 open={expandedSections.patternResults}
                 onOpenChange={(open) => handleSectionOpenChanged("patternResults", open)}
               >
-                <p className="status-line">
+                <p className={statusTextClasses}>
                   {patternSummary.input_rows.toLocaleString()} Input Rows ·{" "}
                   {patternSummary.patterns.length} Completeness Patterns ·{" "}
                   {patternSummary.analysis_columns.length} analyzed columns.
                 </p>
 
-                <div className="pattern-display-controls">
-                  <details className="help-details">
-                    <summary>More details</summary>
-                    <p className="hint-text">
+                <div className="grid justify-items-start gap-3">
+                  <details className="grid min-w-0 gap-2 text-sm text-text-secondary">
+                    <summary className="min-h-10 cursor-pointer list-none py-2 font-medium text-accent hover:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">More details</summary>
+                    <p className={hintTextClasses}>
                       Choose which analyzed columns appear in the pattern summary table. Column
                       visibility only changes the display; filters and analysis use every analyzed
                       column. Pattern details always show all source columns. The Identifier Column
@@ -1786,13 +1794,14 @@ function App() {
                   />
                 </div>
 
-                <div className="pattern-filters">
-                  <p className="filter-heading">Filter the displayed patterns</p>
-                  <div className="filter-fields">
+                <div className="grid justify-items-start gap-3">
+                  <p className="m-0 text-sm font-semibold text-text-secondary">Filter the displayed patterns</p>
+                  <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {patternSummary.analysis_columns.map((columnName, columnIndex) => (
-                      <label key={columnIndex} className="filter-field">
+                      <label key={columnIndex} className="grid min-w-0 gap-1 text-sm text-text-secondary">
                         <span>{columnName}</span>
                         <select
+                          className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                           value={patternStatusFilters[columnName] ?? PATTERN_FILTER_ANY}
                           aria-label={`Pattern filter for ${columnName}`}
                           onChange={(event) =>
@@ -1808,14 +1817,14 @@ function App() {
                   </div>
                   <button
                     type="button"
-                    className="secondary-button"
+                    className={SECONDARY_ACTION_CLASS_NAME}
                     onClick={handleClearPatternFilters}
                   >
                     Clear filters
                   </button>
                 </div>
 
-                <p className="status-line">
+                <p className={statusTextClasses}>
                   {describeDisplayedPatterns(
                     matchedPatterns.length,
                     displayedPatterns.length,
@@ -1826,24 +1835,25 @@ function App() {
                 </p>
 
                 <div
-                  className="summary-table-frame pattern-results-frame"
+                  className={`${summaryTableFrameClasses} max-h-[min(70vh,42.5rem)] overflow-auto overscroll-contain`}
                   role="region"
                   aria-label="Completeness Pattern results table. Scroll to view additional columns."
                   tabIndex={0}
                 >
                   <table
-                    className="summary-table pattern-results-table"
+                    className={`${separatedSummaryTableClasses} min-w-max`}
                     aria-label="Completeness Pattern results"
                   >
                     <thead>
                       <tr>
-                        <th className="pattern-action-header" scope="col">
+                        <th className="sticky left-0 top-0 z-20 min-w-32 bg-surface-muted shadow-[1px_0_0_var(--color-border)]" scope="col">
                           Input Row details
                         </th>
                         {visiblePatternColumns.map(({ columnName, columnIndex }) => (
                           <SortableHeader
                             key={columnIndex}
                             label={columnName}
+                            className="sticky top-0 z-10 bg-surface-muted"
                             sortKey={`status:${columnIndex}`}
                             sortState={patternSort}
                             onSort={handlePatternSortChanged}
@@ -1851,12 +1861,14 @@ function App() {
                         ))}
                         <SortableHeader
                           label="Input Rows"
+                          className="sticky top-0 z-10 bg-surface-muted"
                           sortKey="count"
                           sortState={patternSort}
                           onSort={handlePatternSortChanged}
                         />
                         <SortableHeader
                           label="Share of Input Rows"
+                          className="sticky top-0 z-10 bg-surface-muted"
                           sortKey="share"
                           sortState={patternSort}
                           onSort={handlePatternSortChanged}
@@ -1870,10 +1882,10 @@ function App() {
 
                         return (
                           <tr key={canonicalPatternIndex}>
-                            <td className="pattern-action-cell">
+                            <td className="sticky left-0 z-10 min-w-32 bg-surface shadow-[1px_0_0_var(--color-border)]">
                               <button
                                 type="button"
-                                className="secondary-button"
+                                className={SECONDARY_ACTION_CLASS_NAME}
                                 aria-haspopup="dialog"
                                 aria-label={`View Input Rows for pattern ${canonicalPatternIndex + 1}`}
                                 onClick={() => handlePatternPreviewOpened(canonicalPatternIndex)}
@@ -1896,37 +1908,37 @@ function App() {
                 </div>
 
                 {matchedPatterns.length > MOST_COMMON_PATTERNS_SHOWN && (
-                  <div className="summary-actions">
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
-                      className="secondary-button"
+                      className={SECONDARY_ACTION_CLASS_NAME}
                       onClick={handleShowAllPatternsToggled}
                     >
                       {showAllPatterns ? "Show the most common patterns only" : "Show all patterns"}
                     </button>
-                    <p className="hint-text">
+                    <p className={hintTextClasses}>
                       Counts remain exact; this control changes only how many patterns are shown.
                     </p>
                   </div>
                 )}
 
                 {analysisJob !== null && analysisJob.state === JOB_STATE_SUCCEEDED && (
-                  <div className="summary-actions">
+                  <div className="flex flex-wrap items-center gap-3">
                     <a
-                      className="download-link"
+                      className={`${SECONDARY_ACTION_CLASS_NAME} text-center no-underline`}
                       href={`/api/analysis-jobs/${analysisJob.job_id}/exports/column_completeness.csv`}
                       download
                     >
                       Download column_completeness.csv
                     </a>
                     <a
-                      className="download-link"
+                      className={`${SECONDARY_ACTION_CLASS_NAME} text-center no-underline`}
                       href={`/api/analysis-jobs/${analysisJob.job_id}/exports/pattern_summary.csv`}
                       download
                     >
                       Download pattern_summary.csv
                     </a>
-                    <p className="hint-text">
+                    <p className={hintTextClasses}>
                       Both downloads contain aggregate counts only, not Input Rows or row-level
                       details.
                     </p>

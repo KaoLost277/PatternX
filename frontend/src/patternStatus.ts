@@ -12,11 +12,11 @@ interface PatternStatusPresentation {
 
 const PATTERN_STATUS_PRESENTATION_BY_STATUS: Record<PatternStatus, PatternStatusPresentation> = {
   [PATTERN_STATUS_PRESENT]: {
-    className: "pattern-status pattern-status-present",
+    className: "inline-flex rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-sm font-semibold text-green-800",
     label: "Present",
   },
   [PATTERN_STATUS_MISSING]: {
-    className: "pattern-status pattern-status-missing",
+    className: "inline-flex rounded-full border border-border bg-surface-muted px-2.5 py-1 text-sm font-semibold text-text-muted",
     label: "Missing",
   },
 };

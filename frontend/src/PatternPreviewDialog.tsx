@@ -2,6 +2,7 @@
 import { ColumnVisibilityPicker } from "./ColumnVisibilityPicker";
 import { PatternPreview } from "./PatternPreview";
 import type { CompletenessPattern, PatternSummary } from "./PatternPreview";
+import { dialogClasses, secondaryButtonClasses, statusTextClasses } from "./uiClasses";
 
 interface PatternPreviewDialogProps {
   patternSummary: PatternSummary;
@@ -34,21 +35,21 @@ export function PatternPreviewDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="preview-dialog"
+      className={dialogClasses}
       aria-labelledby="preview-dialog-title"
       aria-describedby="preview-dialog-description"
       onClose={onClose}
     >
-      <div className="preview-dialog-header">
+      <div className="flex min-w-0 items-start justify-between gap-5 max-sm:gap-3">
         <div>
           <h2 id="preview-dialog-title">Sample rows for a Completeness Pattern</h2>
-          <p id="preview-dialog-description" className="status-line">
+          <p id="preview-dialog-description" className={`${statusTextClasses} mt-2`}>
             {pattern.count.toLocaleString()} Input Rows share this pattern.
           </p>
         </div>
         <button
           type="button"
-          className="secondary-button"
+          className={secondaryButtonClasses}
           aria-label="Close sample rows preview"
           onClick={handleCloseButtonClicked}
         >

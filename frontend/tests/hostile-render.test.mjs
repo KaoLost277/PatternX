@@ -48,7 +48,7 @@ test("hostile preview headers and cell values render as text", async () => {
   assert.match(markup, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(markup, /&lt;svg onload=alert\(1\)&gt;/);
   assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/);
-  assert.doesNotMatch(markup, /<script\b|<svg\b|<img\b/i);
+  assert.doesNotMatch(markup, /<script\b|<img\b|<svg\s+onload=/i);
 });
 
 test("preview displays only visible analysis columns and retains its identifier", async () => {

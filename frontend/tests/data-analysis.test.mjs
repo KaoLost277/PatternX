@@ -38,6 +38,134 @@ test("Group Data mode renders explicit selected-column controls", async () => {
   assert.match(markup, /Every Input Row is grouped by the observed combination/);
 });
 
+test("Group Data Summary identifies its selected columns and observed groups", async () => {
+  const { GroupDataResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(GroupDataResults, {
+      summary: {
+        kind: "group_data",
+        input_rows: 3,
+        selected_columns: ["Department", "Approval_Status"],
+        groups: [
+          { values: ["Sales", "Approved"], count: 2, share: 2 / 3 },
+          { values: ["Operations", null], count: 1, share: 1 / 3 },
+        ],
+      },
+      showAllGroups: false,
+      onShowAllGroups: () => {},
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+
+  assert.match(markup, /Groups are defined by values in these selected columns:/);
+  assert.match(markup, /Department, Approval_Status/);
+  assert.match(markup, /Sales/);
+  assert.match(markup, /Approved/);
+  assert.match(markup, /Operations/);
+  assert.match(markup, /Input Rows/);
+  assert.match(markup, /Share/);
+  assert.match(markup, /aria-haspopup="dialog"/);
+  assert.match(
+    markup,
+    /aria-label="View Input Rows for the group Department=Sales, Approval_Status=Approved"/,
+  );
+});
+
+test("Formal Terms Summary retains terms, structural formats, and row-detail actions", async () => {
+  const { FormalTermsResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(FormalTermsResults, {
+      summary: {
+        kind: "formal_terms",
+        input_rows: 4,
+        selected_columns: ["Employee_Code"],
+        columns: [
+          {
+            name: "Employee_Code",
+            terms: [{ value: "EMP-0001", count: 2, share: 0.5 }],
+            format_patterns: [
+              {
+                pattern: "EMP-<4 digits>",
+                occurrence_count: 3,
+                distinct_term_count: 2,
+                share: 0.75,
+              },
+            ],
+          },
+        ],
+      },
+      showAllTerms: {},
+      onShowAllTerms: () => {},
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+
+  assert.match(markup, /Formal Terms Results/);
+  assert.match(markup, /Employee_Code/);
+  assert.match(markup, /EMP-0001/);
+  assert.match(markup, /Structural Format Patterns/);
+  assert.match(markup, /EMP-&lt;4 digits&gt;/);
+  assert.match(markup, /3/);
+  assert.match(markup, /Distinct terms/);
+  assert.equal((markup.match(/aria-haspopup="dialog"/g) ?? []).length, 2);
+  assert.match(markup, /aria-label="View Input Rows for the term &quot;EMP-0001&quot;"/);
+  assert.match(markup, /aria-label="View Input Rows for the format &quot;EMP-&lt;4 digits&gt;&quot;"/);
+});
+
+test("Formal Terms and Group Data render hostile headers and values as inert text", async () => {
+  const { FormalTermsResults, GroupDataResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const hostileHeader = "<img src=x onerror=alert(1)>";
+  const hostileValue = "<script>unsafe</script>";
+  const groupMarkup = renderToStaticMarkup(
+    React.createElement(GroupDataResults, {
+      summary: {
+        kind: "group_data",
+        input_rows: 1,
+        selected_columns: [hostileHeader],
+        groups: [{ values: [hostileValue], count: 1, share: 1 }],
+      },
+      showAllGroups: false,
+      onShowAllGroups: () => {},
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+  const formalTermsMarkup = renderToStaticMarkup(
+    React.createElement(FormalTermsResults, {
+      summary: {
+        kind: "formal_terms",
+        input_rows: 1,
+        selected_columns: [hostileHeader],
+        columns: [
+          {
+            name: hostileHeader,
+            terms: [{ value: hostileValue, count: 1, share: 1 }],
+            format_patterns: [],
+          },
+        ],
+      },
+      showAllTerms: {},
+      onShowAllTerms: () => {},
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+
+  for (const markup of [groupMarkup, formalTermsMarkup]) {
+    assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/);
+    assert.match(markup, /&lt;script&gt;unsafe&lt;\/script&gt;/);
+    assert.doesNotMatch(markup, /<img\b|<script\b/i);
+  }
+});
+
 test("the top navigation exposes all analysis modes as disabled tabs before import", async () => {
   const { default: App } = await viteServer.ssrLoadModule("/src/App.tsx");
   const markup = renderToStaticMarkup(React.createElement(App));

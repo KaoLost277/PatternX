@@ -4,6 +4,11 @@ import { compareNullableText, cycleSort, sortRows } from "./tableSorting";
 import type { SortState } from "./tableSorting";
 import { patternStatusPresentation } from "./patternStatus";
 import type { PatternStatus } from "./patternStatus";
+import {
+  hintTextClasses,
+  separatedSummaryTableClasses,
+  summaryTableFrameClasses,
+} from "./uiClasses";
 
 type PreviewSortKey = "identifier" | `value:${number}`;
 
@@ -72,7 +77,7 @@ export function PatternPreview({
 
   if (pattern.preview_rows.length === 0) {
     return (
-      <p className="hint-text">
+      <p className={hintTextClasses}>
         No sample rows were kept for this pattern. Its exact count above is unaffected.
       </p>
     );
@@ -85,30 +90,30 @@ export function PatternPreview({
     .filter(({ columnName }) => visibleAnalysisColumnSet.has(columnName));
 
   return (
-    <div className="preview-panel">
-      <p className="filter-heading">
+    <div className="grid min-w-0 gap-4">
+      <p className="m-0 break-words text-sm font-semibold text-text-secondary">
         {pattern.preview_rows.length} sample Input Rows. Values are plain text. Select a column
         header to sort; long values are shortened.
       </p>
       {visibleColumns.length === 0 && (
-        <p className="hint-text">
+        <p className={hintTextClasses}>
           No analyzed columns are currently shown. Select columns above to display them.
         </p>
       )}
       <div
-        className="summary-table-frame preview-table-frame"
+        className={`${summaryTableFrameClasses} max-h-[min(56vh,35rem)] overflow-auto overscroll-contain`}
         role="region"
         aria-label="Sample rows table. Scroll to view additional columns or rows."
         tabIndex={0}
       >
         <table
-          className="summary-table preview-table"
+          className={`${separatedSummaryTableClasses} min-w-max`}
           aria-label="Sample rows for the selected Completeness Pattern"
         >
           <thead>
             <tr>
               <SortableHeader
-                className="preview-identifier-header"
+                className="sticky left-0 top-0 z-20 min-w-36 bg-surface-muted"
                 label={identifierColumnLabel}
                 sortKey="identifier"
                 sortState={activePreviewSort}
@@ -128,7 +133,7 @@ export function PatternPreview({
           <tbody>
             {displayedPreviewRows.map((previewRow, previewRowIndex) => (
               <tr key={previewRowIndex}>
-                <th className="preview-identifier-cell" scope="row">
+                <th className="sticky left-0 z-10 min-w-36 bg-surface font-semibold text-text shadow-[1px_0_0_var(--color-border)]" scope="row">
                   {previewRow.identifier_value ?? "Not set"}
                 </th>
                 {visibleColumns.map(({ columnIndex }) => {
@@ -136,9 +141,9 @@ export function PatternPreview({
 
                   return (
                     <td key={columnIndex}>
-                      <div className="preview-cell">
+                      <div className="grid min-w-0 gap-2">
                         <PatternStatusLabel status={pattern.statuses[columnIndex]} />
-                        {cellValue !== null && <span className="preview-value">{cellValue}</span>}
+                        {cellValue !== null && <span className="break-words text-text-secondary">{cellValue}</span>}
                       </div>
                     </td>
                   );
