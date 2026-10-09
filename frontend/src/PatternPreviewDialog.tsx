@@ -5,7 +5,7 @@ import type { CompletenessPattern, PatternSummary } from "./PatternPreview";
 import {
   dialogClasses,
   dialogHeadingClasses,
-  secondaryButtonClasses,
+  primaryButtonClasses,
   statusTextClasses,
 } from "./uiClasses";
 
@@ -56,7 +56,7 @@ export function PatternPreviewDialog({
         </div>
         <button
           type="button"
-          className={secondaryButtonClasses}
+          className={primaryButtonClasses}
           aria-label="Close sample rows preview"
           onClick={handleCloseButtonClicked}
         >
