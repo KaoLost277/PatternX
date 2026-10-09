@@ -60,6 +60,7 @@ test("Group Data Summary identifies its selected columns and observed groups", a
     }),
   );
 
+  assert.match(markup, /Group Data Summary/);
   assert.match(markup, /Groups are defined by values in these selected columns:/);
   assert.match(markup, /Department, Approval_Status/);
   assert.match(markup, /Sales/);
@@ -106,7 +107,7 @@ test("Formal Terms Summary retains terms, structural formats, and row-detail act
     }),
   );
 
-  assert.match(markup, /Formal Terms Results/);
+  assert.match(markup, /Formal Terms Summary/);
   assert.match(markup, /Employee_Code/);
   assert.match(markup, /EMP-0001/);
   assert.match(markup, /Structural Format Patterns/);
@@ -293,6 +294,62 @@ test("data-analysis row details render source values as inert text", async () =>
   assert.doesNotMatch(markup, /<script\b|<img\b/i);
   assert.match(markup, /Download all matching rows as CSV/);
   assert.match(markup, /Page 1 of 1/);
+});
+
+test("shared data-analysis row details distinguish loading, empty, error, and export feedback", async () => {
+  const { DataAnalysisRowsDialog } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisRowsDialog.tsx",
+  );
+  const baseProps = {
+    title: "Rows for a Formal Term",
+    targetDescription: 'the term "example"',
+    matchingRowCount: 1,
+    page: null,
+    requestedPage: 1,
+    loading: false,
+    error: null,
+    onPageChange: () => {},
+    onRetry: () => {},
+    exportLoading: false,
+    exportError: null,
+    exportSuccess: null,
+    onExport: () => {},
+    onClose: () => {},
+  };
+  const renderDialog = (overrides = {}) => {
+    return renderToStaticMarkup(
+      React.createElement(DataAnalysisRowsDialog, { ...baseProps, ...overrides }),
+    );
+  };
+
+  const loadingMarkup = renderDialog({ loading: true });
+  const emptyMarkup = renderDialog({
+    page: { columns: ["source"], rows: [], page: 1, page_size: 50, total_rows: 0 },
+  });
+  const errorMarkup = renderDialog({ error: "The matching rows could not be retrieved." });
+  const exportLoadingMarkup = renderDialog({ exportLoading: true });
+  const exportErrorMarkup = renderDialog({ exportError: "The CSV could not be downloaded." });
+  const exportSuccessMarkup = renderDialog({ exportSuccess: "CSV download started." });
+
+  assert.match(loadingMarkup, /role="status"/);
+  assert.match(loadingMarkup, /Loading matching Input Rows/);
+  assert.doesNotMatch(loadingMarkup, /<table/);
+  assert.match(emptyMarkup, /No Input Rows match/);
+  assert.doesNotMatch(emptyMarkup, /<table/);
+  assert.match(errorMarkup, /role="alert"/);
+  assert.match(errorMarkup, /The matching rows could not be retrieved\./);
+  assert.match(errorMarkup, /Retry loading rows/);
+
+  const exportButton = exportLoadingMarkup.match(
+    /<button[^>]*aria-label="Download all matching Input Rows as CSV"[^>]*>/,
+  )?.[0];
+  assert.ok(exportButton);
+  assert.match(exportButton, /\sdisabled=""/);
+  assert.match(exportLoadingMarkup, /Preparing the full row export/);
+  assert.match(exportErrorMarkup, /role="alert"/);
+  assert.match(exportErrorMarkup, /The CSV could not be downloaded\./);
+  assert.match(exportSuccessMarkup, /role="status"/);
+  assert.match(exportSuccessMarkup, /CSV download started\./);
 });
 
 test("data-analysis row requests include the selected result target and page", async () => {

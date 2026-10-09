@@ -1766,7 +1766,7 @@ function App() {
 
             {patternSummary && (
               <CollapsibleSection
-                title="Completeness Patterns Results"
+                title="Completeness Patterns Summary"
                 summary={patternResultsSectionSummary}
                 open={expandedSections.patternResults}
                 onOpenChange={(open) => handleSectionOpenChanged("patternResults", open)}
@@ -1837,12 +1837,12 @@ function App() {
                 <div
                   className={`${summaryTableFrameClasses} max-h-[min(70vh,42.5rem)] overflow-auto overscroll-contain`}
                   role="region"
-                  aria-label="Completeness Pattern results table. Scroll to view additional columns."
+                  aria-label="Completeness Patterns Summary table. Scroll to view additional columns."
                   tabIndex={0}
                 >
                   <table
                     className={`${separatedSummaryTableClasses} min-w-max`}
-                    aria-label="Completeness Pattern results"
+                    aria-label="Completeness Patterns Summary"
                   >
                     <thead>
                       <tr>

@@ -72,9 +72,9 @@ export function DataAnalysisRowsDialog({
       onClose={onClose}
     >
       <div className="flex min-w-0 items-start justify-between gap-5 max-sm:gap-3">
-        <div>
-          <h2 id={`${dialogId}-title`}>{title}</h2>
-          <p id={`${dialogId}-description`} className={`${statusTextClasses} mt-2`}>
+        <div className="grid min-w-0 gap-2">
+          <h2 className="text-xl font-semibold tracking-tight text-text" id={`${dialogId}-title`}>{title}</h2>
+          <p id={`${dialogId}-description`} className={statusTextClasses}>
             {matchingRowCount.toLocaleString()} Input Rows match {targetDescription}.
           </p>
         </div>

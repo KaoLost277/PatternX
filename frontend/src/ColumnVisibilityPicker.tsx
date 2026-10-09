@@ -36,7 +36,7 @@ export function ColumnVisibilityPicker({
 
   return (
     <details
-      className="group w-full max-w-[45rem]"
+      className="group grid w-full max-w-[45rem] gap-3"
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
     >
       <summary
@@ -52,7 +52,7 @@ export function ColumnVisibilityPicker({
       </summary>
 
       {isOpen && (
-        <div className="mt-3 grid min-w-0 gap-3 rounded-panel border border-border bg-surface-muted p-4">
+        <div className="grid min-w-0 gap-3 rounded-panel border border-border bg-surface-muted p-4">
           <p className={hintTextClasses}>
             Choose which analyzed columns to display. This does not change the analysis or the
             Pattern filters, which still use all analyzed columns.

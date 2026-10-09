@@ -455,7 +455,7 @@ export function DataAnalysisPanel({
 
         {completedSummary !== null && (
           <CollapsibleSection
-            title={`${titleForAnalysis(analysisKind)} Results`}
+            title={titleForAnalysis(analysisKind)}
             summary={
               analysisKind === "formal_terms" && formalTermsSummary !== null
                 ? `${formalTermsSummary.input_rows.toLocaleString()} rows · ${formalTermsSummary.columns.length} columns`
@@ -526,9 +526,9 @@ export function FormalTermsResults({
   onChangeColumns,
 }: FormalTermsResultsProps) {
   return (
-    <section className="grid min-w-0 gap-4" aria-labelledby="formal-terms-results-heading">
+    <section className="grid min-w-0 gap-4" aria-labelledby="formal-terms-summary-heading">
       <div className="grid min-w-0 gap-2">
-        <h3 className="text-lg font-semibold" id="formal-terms-results-heading">Formal Terms Results</h3>
+        <h3 className="text-lg font-semibold" id="formal-terms-summary-heading">Formal Terms Summary</h3>
         <p className={statusTextClasses}>
           {summary.input_rows.toLocaleString()} Input Rows · {summary.columns.length} selected columns.
         </p>
@@ -739,9 +739,9 @@ export function GroupDataResults({
   }
 
   return (
-    <section className="grid min-w-0 gap-4" aria-labelledby="group-data-results-heading">
+    <section className="grid min-w-0 gap-4" aria-labelledby="group-data-summary-heading">
       <div className="grid min-w-0 gap-2">
-        <h3 className="text-lg font-semibold" id="group-data-results-heading">Group Data Results</h3>
+        <h3 className="text-lg font-semibold" id="group-data-summary-heading">Group Data Summary</h3>
         <p className={statusTextClasses}>
           {summary.input_rows.toLocaleString()} Input Rows · {summary.groups.length.toLocaleString()} observed groups.
         </p>
@@ -765,7 +765,7 @@ export function GroupDataResults({
         <div
           className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
           role="region"
-          aria-label="Group Data results. Scroll to view additional columns."
+          aria-label="Group Data Summary table. Scroll to view additional columns."
           tabIndex={0}
         >
           <table className={`${summaryTableClasses} min-w-full`}>

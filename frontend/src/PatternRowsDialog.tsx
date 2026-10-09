@@ -69,9 +69,9 @@ export function PatternRowsDialog({
       onClose={onClose}
     >
       <div className="flex min-w-0 items-start justify-between gap-5 max-sm:gap-3">
-        <div>
-          <h2 id="pattern-rows-dialog-title">Input Rows for a Completeness Pattern</h2>
-          <p id="pattern-rows-dialog-description" className={`${statusTextClasses} mt-2`}>
+        <div className="grid min-w-0 gap-2">
+          <h2 className="text-xl font-semibold tracking-tight text-text" id="pattern-rows-dialog-title">Input Rows for a Completeness Pattern</h2>
+          <p id="pattern-rows-dialog-description" className={statusTextClasses}>
             {patternCount.toLocaleString()} Input Rows share this pattern.
           </p>
         </div>
