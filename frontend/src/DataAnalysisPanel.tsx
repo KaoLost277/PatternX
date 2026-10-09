@@ -22,6 +22,9 @@ import { DataAnalysisRowsDialog } from "./DataAnalysisRowsDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { formatShare } from "./displayFormat";
 import {
+  analysisOptionClasses,
+  dataAnalysisActionCellClasses,
+  dataAnalysisActionHeaderClasses,
   errorMessageClasses,
   hintTextClasses,
   primaryButtonClasses,
@@ -140,7 +143,7 @@ export function DataAnalysisPanel({
     } else if (nextJob.state === "cancelled") {
       setErrorMessage(null);
       onError(null);
-      setStatusMessage("The analysis was cancelled. No results were kept.");
+        setStatusMessage("The analysis was cancelled. No summary was kept.");
     } else {
       setErrorMessage(null);
       onError(null);
@@ -415,7 +418,7 @@ export function DataAnalysisPanel({
               </div>
               <div className="flex flex-wrap gap-2">
                 {columnNames.map((columnName, columnIndex) => (
-                  <label className="flex min-h-10 cursor-pointer items-center gap-2 break-words rounded-control border border-border bg-surface px-3 py-2 text-sm text-text-secondary has-[:checked]:border-accent has-[:checked]:bg-surface-accent has-[:checked]:text-text has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus-ring has-[:disabled]:cursor-not-allowed has-[:disabled]:text-text-muted" key={columnIndex}>
+                  <label className={analysisOptionClasses} key={columnIndex}>
                     <input
                       type="checkbox"
                       className="shrink-0"
@@ -621,7 +624,9 @@ function FormalColumnResults({
           <table className={`${summaryTableClasses} min-w-full`}>
             <thead>
               <tr>
-                <th className="sticky left-0 top-0 z-20 min-w-28 bg-surface-muted shadow-[1px_0_0_var(--color-border)]" scope="col">Input Row details</th>
+                <th className={dataAnalysisActionHeaderClasses} scope="col">
+                  Input Row details
+                </th>
                 <th scope="col">Term</th>
                 <th scope="col">Input Rows</th>
                 <th scope="col">Share</th>
@@ -630,7 +635,7 @@ function FormalColumnResults({
             <tbody>
               {displayedTerms.map((term, termIndex) => (
                 <tr key={termIndex}>
-                  <td className="sticky left-0 z-10 min-w-28 bg-surface shadow-[1px_0_0_var(--color-border)]">
+                  <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
                       className={secondaryButtonClasses}
@@ -675,7 +680,9 @@ function FormalColumnResults({
           <table className={`${summaryTableClasses} min-w-full`}>
             <thead>
               <tr>
-                <th className="sticky left-0 top-0 z-20 min-w-28 bg-surface-muted shadow-[1px_0_0_var(--color-border)]" scope="col">Input Row details</th>
+                <th className={dataAnalysisActionHeaderClasses} scope="col">
+                  Input Row details
+                </th>
                 <th scope="col">Format</th>
                 <th scope="col">Occurrences</th>
                 <th scope="col">Distinct terms</th>
@@ -685,7 +692,7 @@ function FormalColumnResults({
             <tbody>
               {column.format_patterns.map((pattern, patternIndex) => (
                 <tr key={patternIndex}>
-                  <td className="sticky left-0 z-10 min-w-28 bg-surface shadow-[1px_0_0_var(--color-border)]">
+                  <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
                       className={secondaryButtonClasses}
@@ -771,7 +778,9 @@ export function GroupDataResults({
           <table className={`${summaryTableClasses} min-w-full`}>
             <thead>
               <tr>
-                <th className="sticky left-0 top-0 z-20 min-w-28 bg-surface-muted shadow-[1px_0_0_var(--color-border)]" scope="col">Input Row details</th>
+                <th className={dataAnalysisActionHeaderClasses} scope="col">
+                  Input Row details
+                </th>
                 {summary.selected_columns.map((columnName, columnIndex) => (
                   <th key={columnIndex} scope="col">{columnName}</th>
                 ))}
@@ -782,7 +791,7 @@ export function GroupDataResults({
             <tbody>
               {displayedGroups.map((group, groupIndex) => (
                 <tr key={groupIndex}>
-                  <td className="sticky left-0 z-10 min-w-28 bg-surface shadow-[1px_0_0_var(--color-border)]">
+                  <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
                       className={secondaryButtonClasses}

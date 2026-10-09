@@ -1,4 +1,5 @@
 import type { ReactNode, SyntheticEvent } from "react";
+import { collapsibleSummaryClasses } from "./uiClasses";
 
 interface CollapsibleSectionProps {
   title: string;
@@ -25,7 +26,7 @@ export function CollapsibleSection({
       open={open}
       onToggle={handleToggle}
     >
-      <summary className="grid min-h-16 cursor-pointer list-none grid-cols-[minmax(0,1fr)_minmax(0,auto)_0.75rem] items-center gap-x-4 gap-y-2 rounded-panel px-4 py-3 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring max-sm:grid-cols-[minmax(0,1fr)_0.75rem] max-sm:px-3 [&::-webkit-details-marker]:hidden">
+      <summary className={collapsibleSummaryClasses}>
         <span className="min-w-0 font-semibold text-text">{title}</span>
         {summary && (
           <span className="min-w-0 break-words text-right text-sm font-normal text-text-muted max-sm:col-start-1 max-sm:text-left">

@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
 import type { PatternRowsPage } from "./patternRows";
+import { InputRowsTable } from "./InputRowsTable";
 import {
   dialogClasses,
+  dialogHeadingClasses,
   errorMessageClasses,
   hintTextClasses,
   loadingSpinnerClasses,
   primaryButtonClasses,
   secondaryButtonClasses,
-  separatedSummaryTableClasses,
   statusTextClasses,
-  summaryTableFrameClasses,
 } from "./uiClasses";
 
 interface PatternRowsDialogProps {
@@ -70,7 +70,9 @@ export function PatternRowsDialog({
     >
       <div className="flex min-w-0 items-start justify-between gap-5 max-sm:gap-3">
         <div className="grid min-w-0 gap-2">
-          <h2 className="text-xl font-semibold tracking-tight text-text" id="pattern-rows-dialog-title">Input Rows for a Completeness Pattern</h2>
+          <h2 className={dialogHeadingClasses} id="pattern-rows-dialog-title">
+            Input Rows for a Completeness Pattern
+          </h2>
           <p id="pattern-rows-dialog-description" className={statusTextClasses}>
             {patternCount.toLocaleString()} Input Rows share this pattern.
           </p>
@@ -141,39 +143,18 @@ export function PatternRowsDialog({
             Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()} matching Input Rows.
             Source columns and rows are shown in their original order.
           </p>
-          <div
-            className={`${summaryTableFrameClasses} max-h-[min(56vh,35rem)] overflow-auto overscroll-contain`}
-            role="region"
-            aria-label="Input Rows table. Scroll to view additional columns or rows."
-            tabIndex={0}
-          >
-            <table className={`${separatedSummaryTableClasses} min-w-max`}>
-              <thead>
-                <tr>
-                  {page.columns.map((columnName, columnIndex) => (
-                    <th className="sticky top-0 z-10 min-w-32 bg-surface-muted" key={columnIndex} scope="col">
-                      {columnName}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {page.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {page.columns.map((_, columnIndex) => (
-                      <td className="min-w-32" key={columnIndex}>
-                        <span className="break-words">{row[columnIndex] ?? "Not set"}</span>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <InputRowsTable
+            ariaLabel="Input Rows table. Scroll to view additional columns or rows."
+            columns={page.columns}
+            rows={page.rows}
+          />
         </div>
       )}
 
-      <nav className="flex flex-wrap items-center justify-between gap-3 max-sm:justify-center" aria-label="Input Rows pages">
+      <nav
+        className="flex flex-wrap items-center justify-between gap-3 max-sm:justify-center"
+        aria-label="Input Rows pages"
+      >
         <button
           type="button"
           className={secondaryButtonClasses}

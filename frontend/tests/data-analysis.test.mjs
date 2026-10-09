@@ -211,7 +211,7 @@ test("the shared dataset context keeps file, worksheet, and Missing Value contro
   assert.match(markup, /aria-labelledby="shared-context-heading"/);
   assert.match(markup, /CSV or XLSX file/);
   assert.match(markup, /Worksheet/);
-  assert.match(markup, /<summary[^>]*>.*Missing Value settings/);
+  assert.match(markup, /<summary[^>]*>.*<span>Missing Value<\/span>/);
   assert.match(markup, /Import a file to configure Missing Value markers/);
 });
 

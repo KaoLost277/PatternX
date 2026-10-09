@@ -1,4 +1,5 @@
 import type { SortState } from "./tableSorting";
+import { sortableHeaderButtonClasses } from "./uiClasses";
 
 interface SortableHeaderProps<Key extends string> {
   label: string;
@@ -23,7 +24,7 @@ export function SortableHeader<Key extends string>({
     <th className={className} scope="col" aria-sort={direction ?? undefined}>
       <button
         type="button"
-        className="flex min-h-10 w-full items-center justify-between gap-2 bg-transparent p-0 text-left font-[inherit] text-inherit hover:text-text focus-visible:rounded-sm focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        className={sortableHeaderButtonClasses}
         aria-label={`Sort by ${label}`}
         onClick={() => onSort(sortKey)}
       >

@@ -36,14 +36,21 @@ import {
   PATTERN_STATUS_PRESENT,
 } from "./patternStatus";
 import {
+  analysisOptionClasses,
+  detailSummaryClasses,
   errorMessageClasses,
+  fileColumnsSummaryClasses,
   hintTextClasses,
+  identifierOptionClasses,
+  missingValueTableClasses,
+  missingValueSummaryClasses,
   primaryButtonClasses as PRIMARY_ACTION_CLASS_NAME,
   secondaryButtonClasses as SECONDARY_ACTION_CLASS_NAME,
   separatedSummaryTableClasses,
   statusTextClasses,
   summaryTableClasses,
   summaryTableFrameClasses,
+  warningDetailSummaryClasses,
 } from "./uiClasses";
 
 interface ColumnCompleteness {
@@ -662,7 +669,7 @@ function App() {
       return;
     }
     if (jobStatus.state === JOB_STATE_CANCELLED) {
-      setStatusMessage("The analysis was cancelled. No results were kept.");
+      setStatusMessage("The analysis was cancelled. No summary was kept.");
     }
   }
 
@@ -1348,7 +1355,7 @@ function App() {
                     className={PRIMARY_ACTION_CLASS_NAME}
                     onClick={() => handleAnalysisNoticeOpened(notice)}
                   >
-                    {notice.outcome === "succeeded" ? "View results" : "Open analysis"}
+                    {notice.outcome === "succeeded" ? "View summary" : "Open analysis"}
                   </button>
                   <button
                     type="button"
@@ -1427,7 +1434,7 @@ function App() {
             )}
             {worksheetRowLimit !== null && (
               <details className="grid min-w-0 gap-2 text-sm text-text-secondary">
-                <summary className="min-h-10 cursor-pointer list-none py-2 font-medium text-accent hover:text-accent-hover active:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
+                <summary className={detailSummaryClasses}>
                   More details
                 </summary>
                 <p className="m-0 max-w-4xl break-words text-sm text-text-muted">
@@ -1445,7 +1452,7 @@ function App() {
                   is unmeasured; this warning does not limit the analysis.
                 </p>
                 <details className="grid gap-2 text-sm">
-                  <summary className="min-h-10 cursor-pointer list-none py-2 font-medium hover:text-warning-text active:text-warning-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
+                  <summary className={warningDetailSummaryClasses}>
                     More details
                   </summary>
                   <p className="m-0 break-words">
@@ -1459,7 +1466,7 @@ function App() {
 
             {columnNames.length > 0 && (
               <details className="grid min-w-0 gap-3 border-t border-border pt-3 sm:col-span-2">
-                <summary className="min-h-10 cursor-pointer list-none py-2 text-sm font-semibold text-text hover:text-accent active:text-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
+                <summary className={fileColumnsSummaryClasses}>
                   Columns in this file ({columnNames.length})
                 </summary>
                 <ul className="m-0 flex min-w-0 flex-wrap gap-2 p-0">
@@ -1476,8 +1483,8 @@ function App() {
             )}
           </div>
           <details className="group grid min-w-0 gap-3 border-t border-border pt-3">
-            <summary className="flex min-h-10 cursor-pointer list-none flex-wrap items-center justify-between gap-2 rounded-control text-sm font-semibold text-text hover:text-accent active:text-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
-              <span>Missing Value settings</span>
+            <summary className={missingValueSummaryClasses}>
+                <span>Missing Value</span>
               <span className="text-sm font-normal text-text-muted">
                 {Object.values(appliedMissingValueMarkers).reduce(
                   (markerCount, markers) => markerCount + markers.length,
@@ -1490,13 +1497,13 @@ function App() {
               whitespace-only values are missing by default; zero is present.
             </p>
             <details className="grid gap-2 text-sm text-text-secondary">
-              <summary className="min-h-10 cursor-pointer py-2 font-medium text-accent hover:text-accent-hover active:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+              <summary className={detailSummaryClasses}>
                 More details
               </summary>
                   <p className="m-0 max-w-4xl break-words text-sm text-text-muted">
-                Additional markers are matched after trimming surrounding spaces and without regard
-                to letter case. Changing these rules clears existing results so every mode uses the
-                same rules.
+              Additional markers are matched after trimming surrounding spaces and without regard
+              to letter case. Changing these markers clears the current summaries, so each mode
+              uses the same Missing Value rules.
               </p>
             </details>
 
@@ -1514,7 +1521,7 @@ function App() {
                   aria-label="Missing Value markers by column"
                   tabIndex={0}
                 >
-                    <table className="w-full min-w-[34rem] border-collapse text-left text-sm text-text-secondary [&_th]:border-b [&_th]:border-border [&_th]:px-3 [&_th]:py-2.5 [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5">
+                    <table className={missingValueTableClasses}>
                     <thead className="bg-surface-muted text-xs font-semibold uppercase tracking-wide text-text-secondary">
                       <tr>
                         <th scope="col">Column</th>
@@ -1668,7 +1675,7 @@ function App() {
               Choose an optional Identifier Column and select which columns to analyze.
             </p>
             <details className="grid min-w-0 gap-2 text-sm text-text-secondary">
-              <summary className="min-h-10 cursor-pointer list-none py-2 font-medium text-accent hover:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">More details</summary>
+              <summary className={detailSummaryClasses}>More details</summary>
               <p className={hintTextClasses}>
                 The Identifier Column is for display only. It does not affect Input Row counts or
                 join the analysis. Rows with the same Completeness Pattern are grouped with their
@@ -1703,8 +1710,8 @@ function App() {
                         key={columnIndex}
                         className={
                           column.name === identifierColumn
-                            ? "flex min-h-10 cursor-not-allowed items-center gap-2 break-words rounded-control border border-dashed border-border-strong bg-surface-muted px-3 py-2 text-sm text-text-muted"
-                            : "flex min-h-10 cursor-pointer items-center gap-2 break-words rounded-control border border-border bg-surface px-3 py-2 text-sm text-text-secondary has-[:checked]:border-accent has-[:checked]:bg-surface-accent has-[:checked]:text-text has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus-ring"
+                            ? identifierOptionClasses
+                            : analysisOptionClasses
                         }
                       >
                         <input
@@ -1728,7 +1735,7 @@ function App() {
                       This selection uses {columnsToAnalyze.length} columns; the largest recorded
                       benchmark used {MAX_BENCHMARKED_SELECTED_COLUMNS}. Runtime and memory use for
                       wider selections are unmeasured. This warning does not limit or truncate the
-                      exact results.
+                      the exact summary.
                     </p>
                   )}
                 </fieldset>
@@ -1779,7 +1786,7 @@ function App() {
 
                 <div className="grid justify-items-start gap-3">
                   <details className="grid min-w-0 gap-2 text-sm text-text-secondary">
-                    <summary className="min-h-10 cursor-pointer list-none py-2 font-medium text-accent hover:text-accent-hover focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">More details</summary>
+                    <summary className={detailSummaryClasses}>More details</summary>
                     <p className={hintTextClasses}>
                       Choose which analyzed columns appear in the pattern summary table. Column
                       visibility only changes the display; filters and analysis use every analyzed
