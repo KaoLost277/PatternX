@@ -1,5 +1,16 @@
 import { useEffect, useId, useRef } from "react";
 import type { DataAnalysisRowsPage } from "./dataAnalysisApi";
+import { InputRowsTable } from "./InputRowsTable";
+import {
+  dialogClasses,
+  dialogHeadingClasses,
+  errorMessageClasses,
+  hintTextClasses,
+  loadingSpinnerClasses,
+  primaryButtonClasses,
+  secondaryButtonClasses,
+  statusTextClasses,
+} from "./uiClasses";
 
 interface DataAnalysisRowsDialogProps {
   title: string;
@@ -55,21 +66,23 @@ export function DataAnalysisRowsDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="pattern-rows-dialog data-rows-dialog"
+      className={dialogClasses}
       aria-labelledby={`${dialogId}-title`}
       aria-describedby={`${dialogId}-description`}
       onClose={onClose}
     >
-      <div className="pattern-rows-dialog-header">
-        <div>
-          <h2 id={`${dialogId}-title`}>{title}</h2>
-          <p id={`${dialogId}-description`} className="status-line">
+      <div className="flex min-w-0 items-start justify-between gap-5 max-sm:gap-3">
+        <div className="grid min-w-0 gap-2">
+          <h2 className={dialogHeadingClasses} id={`${dialogId}-title`}>
+            {title}
+          </h2>
+          <p id={`${dialogId}-description`} className={statusTextClasses}>
             {matchingRowCount.toLocaleString()} Input Rows match {targetDescription}.
           </p>
         </div>
         <button
           type="button"
-          className="secondary-button"
+          className={secondaryButtonClasses}
           aria-label="Close data analysis details"
           onClick={handleCloseButtonClicked}
         >
@@ -77,10 +90,10 @@ export function DataAnalysisRowsDialog({
         </button>
       </div>
 
-      <div className="pattern-rows-export">
+      <div className="grid min-w-0 justify-items-start gap-4">
         <button
           type="button"
-          className="primary-button"
+          className={primaryButtonClasses}
           aria-label="Download all matching Input Rows as CSV"
           disabled={exportLoading}
           onClick={onExport}
@@ -88,87 +101,75 @@ export function DataAnalysisRowsDialog({
           {exportLoading ? "Preparing CSV download..." : "Download all matching rows as CSV"}
         </button>
         {exportLoading && (
-          <p className="status-line" role="status">
-            <span className="loading-spinner" aria-hidden="true" />
+          <p className={statusTextClasses} role="status">
+            <span className={loadingSpinnerClasses} aria-hidden="true" />
             Preparing the full row export...
           </p>
         )}
         {exportError !== null && (
-          <p className="error-message pattern-rows-export-error" role="alert">
+          <p className={errorMessageClasses} role="alert">
             {exportError}
           </p>
         )}
         {exportSuccess !== null && (
-          <p className="status-line" role="status">
+          <p className={statusTextClasses} role="status">
             {exportSuccess}
           </p>
         )}
       </div>
 
       {loading && (
-        <p className="status-line" role="status">
-          <span className="loading-spinner" aria-hidden="true" />
+        <p className={statusTextClasses} role="status">
+          <span className={loadingSpinnerClasses} aria-hidden="true" />
           Loading matching Input Rows...
         </p>
       )}
 
       {error !== null && (
-        <div className="error-message pattern-rows-error" role="alert">
+        <div className={`${errorMessageClasses} grid justify-items-start gap-3`} role="alert">
           <p>{error}</p>
-          <button type="button" className="secondary-button" onClick={onRetry}>
+          <button type="button" className={secondaryButtonClasses} onClick={onRetry}>
             Retry loading rows
           </button>
         </div>
       )}
 
       {!loading && error === null && page !== null && page.total_rows === 0 && (
-        <p className="hint-text" role="status">
-          No Input Rows match {targetDescription}.
-        </p>
-      )}
-
-      {!loading && error === null && page !== null && page.total_rows > 0 && (
-        <div className="preview-panel">
-          <p className="status-line">
-            Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()} matching Input Rows.
-            Source columns and rows are shown in their original order.
+        <div className="grid justify-items-start gap-3">
+          <p className={hintTextClasses} role="status">
+            No Input Rows match {targetDescription}.
           </p>
-          <div
-            className="summary-table-frame preview-table-frame"
-            role="region"
-            aria-label="Matching Input Rows. Scroll to view additional columns or rows."
-            tabIndex={0}
+          <button
+            type="button"
+            className={secondaryButtonClasses}
+            onClick={handleCloseButtonClicked}
           >
-            <table className="summary-table preview-table pattern-rows-table">
-              <thead>
-                <tr>
-                  {page.columns.map((columnName, columnIndex) => (
-                    <th key={columnIndex} scope="col">
-                      {columnName}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {page.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {page.columns.map((_, columnIndex) => (
-                      <td key={columnIndex}>
-                        <span className="preview-value">{row[columnIndex] ?? "Not set"}</span>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            Return to summary
+          </button>
         </div>
       )}
 
-      <nav className="pattern-rows-pagination" aria-label="Matching Input Rows pages">
+      {!loading && error === null && page !== null && page.total_rows > 0 && (
+        <div className="grid min-w-0 gap-4">
+          <p className={statusTextClasses}>
+            Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()} matching Input Rows.
+            Source columns and rows are shown in their original order.
+          </p>
+          <InputRowsTable
+            ariaLabel="Matching Input Rows. Scroll to view additional columns or rows."
+            columns={page.columns}
+            rows={page.rows}
+          />
+        </div>
+      )}
+
+      <nav
+        className="flex flex-wrap items-center justify-between gap-3 max-sm:justify-center"
+        aria-label="Matching Input Rows pages"
+      >
         <button
           type="button"
-          className="secondary-button"
+          className={secondaryButtonClasses}
           disabled={requestedPage <= 1 || loading}
           onClick={() => onPageChange(requestedPage - 1)}
         >
@@ -179,7 +180,7 @@ export function DataAnalysisRowsDialog({
         </span>
         <button
           type="button"
-          className="secondary-button"
+          className={secondaryButtonClasses}
           disabled={requestedPage >= pageCount || loading}
           onClick={() => onPageChange(requestedPage + 1)}
         >

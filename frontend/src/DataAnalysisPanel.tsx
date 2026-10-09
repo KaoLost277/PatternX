@@ -21,6 +21,18 @@ import type {
 import { DataAnalysisRowsDialog } from "./DataAnalysisRowsDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { formatShare } from "./displayFormat";
+import {
+  analysisOptionClasses,
+  dataAnalysisActionCellClasses,
+  dataAnalysisActionHeaderClasses,
+  errorMessageClasses,
+  hintTextClasses,
+  primaryButtonClasses,
+  secondaryButtonClasses,
+  statusTextClasses,
+  summaryTableClasses,
+  summaryTableFrameClasses,
+} from "./uiClasses";
 
 interface DataAnalysisPanelProps {
   analysisKind: DataAnalysisKind;
@@ -131,7 +143,7 @@ export function DataAnalysisPanel({
     } else if (nextJob.state === "cancelled") {
       setErrorMessage(null);
       onError(null);
-      setStatusMessage("The analysis was cancelled. No results were kept.");
+        setStatusMessage("The analysis was cancelled. No summary was kept.");
     } else {
       setErrorMessage(null);
       onError(null);
@@ -372,24 +384,24 @@ export function DataAnalysisPanel({
           open={setupExpanded}
           onOpenChange={setSetupExpanded}
         >
-          <div className="analysis-mode-section">
-            <p className="lead">
+          <div className="grid min-w-0 gap-4">
+            <p className="m-0 max-w-4xl text-sm leading-6 text-text-secondary">
               {analysisKind === "formal_terms"
                 ? "Review exact terms and repeated structural formats in the columns you select."
                 : "Every Input Row is grouped by the exact values in the columns you select."}
             </p>
-          <form className="summary-form" onSubmit={handleSubmit}>
+          <form className="grid min-w-0 gap-5" onSubmit={handleSubmit}>
             <fieldset
               ref={columnSelectionRef}
-              className="analysis-fieldset"
+              className="grid min-w-0 gap-3 border-0 p-0"
               tabIndex={-1}
               disabled={analysisBusy}
             >
               <legend>Columns to analyze</legend>
-              <div className="column-selection-actions">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="secondary-button"
+                  className={secondaryButtonClasses}
                   disabled={analysisBusy || selectedColumns.length === columnNames.length}
                   onClick={handleSelectAllColumns}
                 >
@@ -397,18 +409,19 @@ export function DataAnalysisPanel({
                 </button>
                 <button
                   type="button"
-                  className="secondary-button"
+                  className={secondaryButtonClasses}
                   disabled={analysisBusy || selectedColumns.length === 0}
                   onClick={handleClearColumns}
                 >
                   Clear selection
                 </button>
               </div>
-              <div className="analysis-options">
+              <div className="flex flex-wrap gap-2">
                 {columnNames.map((columnName, columnIndex) => (
-                  <label className="analysis-option" key={columnIndex}>
+                  <label className={analysisOptionClasses} key={columnIndex}>
                     <input
                       type="checkbox"
+                      className="shrink-0"
                       checked={selectedColumns.includes(columnName)}
                       onChange={() => handleColumnToggled(columnName)}
                     />
@@ -416,24 +429,24 @@ export function DataAnalysisPanel({
                   </label>
                 ))}
               </div>
-              <p className="hint-text">
+              <p className={hintTextClasses}>
                 {analysisKind === "formal_terms"
                   ? "Each selected column is analyzed separately. Missing values use the configured column rules."
                   : "Every Input Row is grouped by the observed combination of selected values. Repeated rows still count separately."}
               </p>
             </fieldset>
 
-            {errorMessage !== null && <p className="error-message" role="alert">{errorMessage}</p>}
+            {errorMessage !== null && <p className={errorMessageClasses} role="alert">{errorMessage}</p>}
             {statusMessage !== null && !requestStarting && (
-              <p className="status-line" role="status">
+              <p className={statusTextClasses} role="status">
                 {statusMessage}
               </p>
             )}
 
-            <div className="summary-actions">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
-                className="primary-button"
+                className={primaryButtonClasses}
                 disabled={selectedColumns.length === 0 || analysisBusy}
               >
                 {analysisKind === "formal_terms" ? "Analyze Formal Terms" : "Analyze Group Data"}
@@ -445,7 +458,7 @@ export function DataAnalysisPanel({
 
         {completedSummary !== null && (
           <CollapsibleSection
-            title={`${titleForAnalysis(analysisKind)} Results`}
+            title={titleForAnalysis(analysisKind)}
             summary={
               analysisKind === "formal_terms" && formalTermsSummary !== null
                 ? `${formalTermsSummary.input_rows.toLocaleString()} rows · ${formalTermsSummary.columns.length} columns`
@@ -508,7 +521,7 @@ interface FormalTermsResultsProps {
   onChangeColumns: () => void;
 }
 
-function FormalTermsResults({
+export function FormalTermsResults({
   summary,
   showAllTerms,
   onShowAllTerms,
@@ -516,13 +529,13 @@ function FormalTermsResults({
   onChangeColumns,
 }: FormalTermsResultsProps) {
   return (
-    <section className="analysis-results" aria-labelledby="formal-terms-results-heading">
-      <div className="analysis-mode-heading">
-        <h3 id="formal-terms-results-heading">Formal Terms Results</h3>
-        <p className="status-line">
+    <section className="grid min-w-0 gap-4" aria-labelledby="formal-terms-summary-heading">
+      <div className="grid min-w-0 gap-2">
+        <h3 className="text-lg font-semibold" id="formal-terms-summary-heading">Formal Terms Summary</h3>
+        <p className={statusTextClasses}>
           {summary.input_rows.toLocaleString()} Input Rows · {summary.columns.length} selected columns.
         </p>
-        <p className="hint-text">
+        <p className={hintTextClasses}>
           Structural formats keep literal text and digit-run widths, for example{" "}
           <code>EMP-&lt;5 digits&gt;</code>. Configure Missing Value markers in the shared settings
           section.
@@ -587,31 +600,33 @@ function FormalColumnResults({
   }
 
   return (
-    <section className="formal-column-results" aria-labelledby={`formal-column-${columnIndex}`}>
-      <h4 id={`formal-column-${columnIndex}`}>{column.name}</h4>
-      <p className="status-line">
+    <section className="grid min-w-0 gap-4 border-t border-border pt-4" aria-labelledby={`formal-column-${columnIndex}`}>
+      <h4 className="text-base font-semibold" id={`formal-column-${columnIndex}`}>{column.name}</h4>
+      <p className={statusTextClasses}>
         {column.terms.length.toLocaleString()} distinct terms in {inputRows.toLocaleString()} Input Rows.
       </p>
 
-      <h5>Terms</h5>
+      <h5 className="text-sm font-semibold text-text-secondary">Terms</h5>
       {column.terms.length === 0 ? (
-        <div className="empty-state">
-          <p className="hint-text">No terms were found in this column.</p>
-          <button type="button" className="secondary-button" onClick={onChangeColumns}>
+        <div className="grid justify-items-start gap-3">
+          <p className={hintTextClasses}>No terms were found in this column.</p>
+          <button type="button" className={secondaryButtonClasses} onClick={onChangeColumns}>
             Change selected columns
           </button>
         </div>
       ) : (
         <div
-          className="summary-table-frame data-analysis-table-frame"
+          className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
           role="region"
           aria-label={`Terms in ${column.name}. Scroll to view additional columns.`}
           tabIndex={0}
         >
-          <table className="summary-table data-analysis-table">
+          <table className={`${summaryTableClasses} min-w-full`}>
             <thead>
               <tr>
-                <th className="data-analysis-action-header" scope="col">Input Row details</th>
+                <th className={dataAnalysisActionHeaderClasses} scope="col">
+                  Input Row details
+                </th>
                 <th scope="col">Term</th>
                 <th scope="col">Input Rows</th>
                 <th scope="col">Share</th>
@@ -620,17 +635,20 @@ function FormalColumnResults({
             <tbody>
               {displayedTerms.map((term, termIndex) => (
                 <tr key={termIndex}>
-                  <td className="data-analysis-action-cell">
+                  <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
-                      className="secondary-button"
+                      className={secondaryButtonClasses}
                       aria-haspopup="dialog"
+                      aria-label={`View Input Rows for the term ${JSON.stringify(formatTerm(term.value))}`}
                       onClick={() => openTermDetail(termIndex)}
                     >
                       View rows
                     </button>
                   </td>
-                  <th scope="row"><span className="preview-value">{formatTerm(term.value)}</span></th>
+                  <th scope="row">
+                    <span className="[overflow-wrap:anywhere]">{formatTerm(term.value)}</span>
+                  </th>
                   <td>{term.count.toLocaleString()}</td>
                   <td>{formatShare(term.share)}</td>
                 </tr>
@@ -641,30 +659,32 @@ function FormalColumnResults({
       )}
 
       {column.terms.length > TERMS_SHOWN_BY_DEFAULT && (
-        <button type="button" className="secondary-button" onClick={onShowAllTerms}>
+        <button type="button" className={secondaryButtonClasses} onClick={onShowAllTerms}>
           {showAllTerms ? "Show the most common terms only" : "Show all terms"}
         </button>
       )}
 
-      <h5>Structural Format Patterns</h5>
+      <h5 className="text-sm font-semibold text-text-secondary">Structural Format Patterns</h5>
       {column.format_patterns.length === 0 ? (
-        <div className="empty-state">
-          <p className="hint-text">No repeated structural format patterns were found.</p>
-          <button type="button" className="secondary-button" onClick={onChangeColumns}>
+        <div className="grid justify-items-start gap-3">
+          <p className={hintTextClasses}>No repeated structural format patterns were found.</p>
+          <button type="button" className={secondaryButtonClasses} onClick={onChangeColumns}>
             Change selected columns
           </button>
         </div>
       ) : (
         <div
-          className="summary-table-frame data-analysis-table-frame"
+          className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
           role="region"
           aria-label={`Structural formats in ${column.name}. Scroll to view additional columns.`}
           tabIndex={0}
         >
-          <table className="summary-table data-analysis-table">
+          <table className={`${summaryTableClasses} min-w-full`}>
             <thead>
               <tr>
-                <th className="data-analysis-action-header" scope="col">Input Row details</th>
+                <th className={dataAnalysisActionHeaderClasses} scope="col">
+                  Input Row details
+                </th>
                 <th scope="col">Format</th>
                 <th scope="col">Occurrences</th>
                 <th scope="col">Distinct terms</th>
@@ -674,17 +694,20 @@ function FormalColumnResults({
             <tbody>
               {column.format_patterns.map((pattern, patternIndex) => (
                 <tr key={patternIndex}>
-                  <td className="data-analysis-action-cell">
+                  <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
-                      className="secondary-button"
+                      className={secondaryButtonClasses}
                       aria-haspopup="dialog"
+                      aria-label={`View Input Rows for the format ${JSON.stringify(pattern.pattern)}`}
                       onClick={() => openFormatDetail(patternIndex, pattern)}
                     >
                       View rows
                     </button>
                   </td>
-                  <th scope="row"><span className="preview-value">{pattern.pattern}</span></th>
+                  <th scope="row">
+                    <span className="[overflow-wrap:anywhere]">{pattern.pattern}</span>
+                  </th>
                   <td>{pattern.occurrence_count.toLocaleString()}</td>
                   <td>{pattern.distinct_term_count.toLocaleString()}</td>
                   <td>{formatShare(pattern.share)}</td>
@@ -706,7 +729,7 @@ interface GroupDataResultsProps {
   onChangeColumns: () => void;
 }
 
-function GroupDataResults({
+export function GroupDataResults({
   summary,
   showAllGroups,
   onShowAllGroups,
@@ -727,32 +750,41 @@ function GroupDataResults({
   }
 
   return (
-    <section className="analysis-results" aria-labelledby="group-data-results-heading">
-      <div className="analysis-mode-heading">
-        <h3 id="group-data-results-heading">Group Data Results</h3>
-        <p className="status-line">
+    <section className="grid min-w-0 gap-4" aria-labelledby="group-data-summary-heading">
+      <div className="grid min-w-0 gap-2">
+        <h3 className="text-lg font-semibold" id="group-data-summary-heading">Group Data Summary</h3>
+        <p className={statusTextClasses}>
           {summary.input_rows.toLocaleString()} Input Rows · {summary.groups.length.toLocaleString()} observed groups.
+        </p>
+        <p className={hintTextClasses}>
+          Groups are defined by values in these selected columns:{" "}
+          <strong className="font-semibold text-text-secondary">
+            {summary.selected_columns.join(", ")}
+          </strong>
+          .
         </p>
       </div>
 
       {summary.groups.length === 0 ? (
-        <div className="empty-state">
-          <p className="hint-text">No observed groups were found.</p>
-          <button type="button" className="secondary-button" onClick={onChangeColumns}>
+        <div className="grid justify-items-start gap-3">
+          <p className={hintTextClasses}>No observed groups were found.</p>
+          <button type="button" className={secondaryButtonClasses} onClick={onChangeColumns}>
             Change selected columns
           </button>
         </div>
       ) : (
         <div
-          className="summary-table-frame data-analysis-table-frame"
+          className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
           role="region"
-          aria-label="Group Data results. Scroll to view additional columns."
+          aria-label="Group Data Summary table. Scroll to view additional columns."
           tabIndex={0}
         >
-          <table className="summary-table data-analysis-table">
+          <table className={`${summaryTableClasses} min-w-full`}>
             <thead>
               <tr>
-                <th className="data-analysis-action-header" scope="col">Input Row details</th>
+                <th className={dataAnalysisActionHeaderClasses} scope="col">
+                  Input Row details
+                </th>
                 {summary.selected_columns.map((columnName, columnIndex) => (
                   <th key={columnIndex} scope="col">{columnName}</th>
                 ))}
@@ -763,18 +795,21 @@ function GroupDataResults({
             <tbody>
               {displayedGroups.map((group, groupIndex) => (
                 <tr key={groupIndex}>
-                  <td className="data-analysis-action-cell">
+                  <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
-                      className="secondary-button"
+                      className={secondaryButtonClasses}
                       aria-haspopup="dialog"
+                      aria-label={`View Input Rows for the group ${groupDescription(summary.selected_columns, group)}`}
                       onClick={() => openGroupDetail(groupIndex, group)}
                     >
                       View rows
                     </button>
                   </td>
                   {group.values.map((value, valueIndex) => (
-                    <td key={valueIndex}><span className="preview-value">{formatTerm(value)}</span></td>
+                    <td key={valueIndex}>
+                      <span className="[overflow-wrap:anywhere]">{formatTerm(value)}</span>
+                    </td>
                   ))}
                   <td>{group.count.toLocaleString()}</td>
                   <td>{formatShare(group.share)}</td>
@@ -786,7 +821,7 @@ function GroupDataResults({
       )}
 
       {summary.groups.length > GROUPS_SHOWN_BY_DEFAULT && (
-        <button type="button" className="secondary-button" onClick={onShowAllGroups}>
+        <button type="button" className={secondaryButtonClasses} onClick={onShowAllGroups}>
           {showAllGroups ? "Show the most common groups only" : "Show all groups"}
         </button>
       )}

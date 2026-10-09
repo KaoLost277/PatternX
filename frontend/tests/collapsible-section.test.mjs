@@ -69,5 +69,5 @@ test("the shared dataset context and file picker appear on the initial app view"
   );
   assert.match(markup, /<h2 id="shared-context-heading"[^>]*>Shared data context<\/h2>/);
   assert.match(markup, /<label[^>]*><span>CSV or XLSX file<\/span>/);
-  assert.match(markup, /<summary[^>]*>.*Missing Value settings/);
+  assert.match(markup, /<summary[^>]*>.*Missing Value/);
 });

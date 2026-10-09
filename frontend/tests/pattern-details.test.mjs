@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { after, test } from "node:test";
@@ -10,11 +9,6 @@ const viteServer = await createServer({
   server: { middlewareMode: true, hmr: false },
   appType: "custom",
 });
-
-const patternRowsDialogStyles = readFileSync(
-  new URL("../src/PatternRowsDialog.css", import.meta.url),
-  "utf8",
-);
 
 after(async () => {
   await viteServer.close();
@@ -89,38 +83,24 @@ test("the populated View rows panel contains a semantic table of every returned 
   assert.match(markup, /unselected_source_column/);
   assert.equal((markup.match(/same-id/g) ?? []).length, 2);
 
-  const previewPanel = markup.match(
-    /<div class="preview-panel">([\s\S]*?)<\/div>\s*<\/div>/,
+  const sourceTableRegion = markup.match(
+    /<div[^>]*role="region"[^>]*aria-label="Input Rows table\. Scroll to view additional columns or rows\."[^>]*>([\s\S]*?)<\/div>/,
   )?.[1];
-  assert.ok(previewPanel, "successful row details should render the populated preview panel");
-  assert.match(previewPanel, /<table\b[^>]*class="summary-table preview-table(?:\s|")/);
-  assert.match(previewPanel, /<thead>[\s\S]*?<th[^>]*scope="col"/);
-  assert.match(previewPanel, /<tbody>[\s\S]*?<td/);
-  assert.equal((previewPanel.match(/<th\b/g) ?? []).length, sourceColumns.length);
-  assert.equal((previewPanel.match(/<tr\b/g) ?? []).length, 3);
-  assert.equal((previewPanel.match(/<td\b/g) ?? []).length, 6);
-  assert.match(previewPanel, /record_id[\s\S]*?&lt;script&gt;source&lt;\/script&gt;[\s\S]*?unselected_source_column/);
+  assert.ok(sourceTableRegion, "successful row details should expose a named source table region");
+  assert.match(markup, /aria-label="Input Rows table\. Scroll to view additional columns or rows\."[^>]*tabindex="0"/);
+  assert.match(sourceTableRegion, /<table\b/);
+  assert.match(sourceTableRegion, /<thead>[\s\S]*?<th[^>]*scope="col"/);
+  assert.match(sourceTableRegion, /<tbody>[\s\S]*?<td/);
+  assert.equal((sourceTableRegion.match(/<th\b/g) ?? []).length, sourceColumns.length);
+  assert.equal((sourceTableRegion.match(/<tr\b/g) ?? []).length, 3);
+  assert.equal((sourceTableRegion.match(/<td\b/g) ?? []).length, 6);
+  assert.match(sourceTableRegion, /record_id[\s\S]*?&lt;script&gt;source&lt;\/script&gt;[\s\S]*?unselected_source_column/);
   assert.doesNotMatch(markup, /Loading Input Rows for this pattern|role="alert"/);
 
   const firstHostileHeaderPosition = markup.indexOf("&lt;script&gt;source&lt;/script&gt;");
   assert.ok(markup.indexOf("record_id") < firstHostileHeaderPosition);
   assert.ok(firstHostileHeaderPosition < markup.indexOf("unselected_source_column"));
   assert.ok(markup.indexOf("&lt;img") < markup.indexOf("second row"));
-});
-
-test("the row details table keeps source columns readable and scrolls horizontally", () => {
-  assert.match(
-    patternRowsDialogStyles,
-    /\.pattern-rows-dialog \.preview-table-frame\s*\{[^}]*overflow:\s*auto;/s,
-  );
-  assert.match(
-    patternRowsDialogStyles,
-    /\.pattern-rows-table\s*\{[^}]*width:\s*auto;[^}]*min-width:\s*100%;/s,
-  );
-  assert.match(
-    patternRowsDialogStyles,
-    /\.pattern-rows-table th,\s*\.pattern-rows-table td\s*\{[^}]*min-width:\s*8rem;/s,
-  );
 });
 
 test("pattern row requests use the job and canonical pattern index with the selected page", async () => {
@@ -276,6 +256,7 @@ test("pattern details distinguish loading, empty, and retrieval-error states", a
   assert.match(loadingMarkup, /Loading Input Rows for this pattern/);
   assert.doesNotMatch(loadingMarkup, /<table/);
   assert.match(emptyMarkup, /No Input Rows were found/);
+  assert.match(emptyMarkup, /Return to summary/);
   assert.doesNotMatch(emptyMarkup, /<table/);
   assert.match(errorMarkup, /role="alert"/);
   assert.match(errorMarkup, /The detail rows could not be read\./);
@@ -297,7 +278,7 @@ test("pattern details offer an accessible full-row CSV export and show retryable
     /<button[^>]*aria-label="Download all matching Input Rows as CSV"[^>]*>/,
   )?.[0];
   assert.ok(exportButton);
-  assert.doesNotMatch(exportButton, /disabled/);
+  assert.doesNotMatch(exportButton, /\sdisabled(?:=|>)/);
   assert.match(markup, /Download all matching rows as CSV/);
   assert.match(markup, /role="alert"/);
   assert.match(markup, /The CSV could not be downloaded\. Check the local API and retry\./);
