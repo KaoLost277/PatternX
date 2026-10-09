@@ -33,6 +33,11 @@ from app.row_details import (
     SourceColumnProjection,
     source_column_projection,
 )
+from app.row_filters import (
+    ColumnFilters,
+    register_row_filter_functions,
+    row_filter_conditions,
+)
 from app.sqlite_storage import CSVFileError, CSVImportCancelledError, load_csv_into_database, open_analysis_database
 from app.workfiles import clean_up_job, clean_up_job_sources
 
@@ -205,19 +210,22 @@ class DataAnalysisJob:
         item_index: int,
         column_index: int | None,
         page: int,
+        filters: ColumnFilters | None = None,
     ) -> dict[str, object]:
         with self._lock:
             if self.state != JOB_STATE_SUCCEEDED or self.result is None:
                 raise DataAnalysisNotSucceededError()
 
-            query, parameters, matching_row_count, _ = self._rows_query(
+            query, count_query, parameters, matching_row_count, _ = self._rows_query(
                 target_kind,
                 item_index,
                 column_index,
+                filters=filters,
             )
             offset = (page - 1) * DATA_ROWS_PAGE_SIZE
             rows: list[tuple[object, ...]] = []
-            if offset < matching_row_count:
+            total_rows = matching_row_count
+            if offset < matching_row_count or filters:
                 database_uri = self.analysis_inputs.database_path.resolve().as_uri() + "?mode=ro"
                 connection = sqlite3.connect(database_uri, uri=True)
                 try:
@@ -226,10 +234,16 @@ class DataAnalysisJob:
                         self.analysis_inputs.column_names,
                         self.analysis_inputs.missing_markers_by_column,
                     )
-                    rows = connection.execute(
-                        f"{query} LIMIT ? OFFSET ?",
-                        [*parameters, DATA_ROWS_PAGE_SIZE, offset],
-                    ).fetchall()
+                    register_row_filter_functions(connection)
+                    if filters:
+                        total_rows = int(
+                            connection.execute(count_query, parameters).fetchone()[0]
+                        )
+                    if offset < total_rows:
+                        rows = connection.execute(
+                            f"{query} LIMIT ? OFFSET ?",
+                            [*parameters, DATA_ROWS_PAGE_SIZE, offset],
+                        ).fetchall()
                 finally:
                     connection.close()
 
@@ -238,7 +252,7 @@ class DataAnalysisJob:
                 "rows": [list(row) for row in rows],
                 "page": page,
                 "page_size": DATA_ROWS_PAGE_SIZE,
-                "total_rows": matching_row_count,
+                "total_rows": total_rows,
             }
 
     def open_rows_export(
@@ -247,6 +261,7 @@ class DataAnalysisJob:
         item_index: int,
         column_index: int | None,
         column_mode: ColumnMode = "all",
+        filters: ColumnFilters | None = None,
     ) -> tuple[list[str], DataAnalysisRowsExport]:
         self._lock.acquire()
         connection: sqlite3.Connection | None = None
@@ -254,11 +269,12 @@ class DataAnalysisJob:
             if self.state != JOB_STATE_SUCCEEDED or self.result is None:
                 raise DataAnalysisNotSucceededError()
 
-            query, parameters, _, column_projection = self._rows_query(
+            query, _, parameters, _, column_projection = self._rows_query(
                 target_kind,
                 item_index,
                 column_index,
                 column_mode,
+                filters,
             )
             database_uri = self.analysis_inputs.database_path.resolve().as_uri() + "?mode=ro"
             connection = sqlite3.connect(database_uri, uri=True, check_same_thread=False)
@@ -267,6 +283,7 @@ class DataAnalysisJob:
                 self.analysis_inputs.column_names,
                 self.analysis_inputs.missing_markers_by_column,
             )
+            register_row_filter_functions(connection)
             rows = DataAnalysisRowsExport(
                 connection.execute(query, parameters),
                 connection,
@@ -287,7 +304,8 @@ class DataAnalysisJob:
         item_index: int,
         column_index: int | None,
         column_mode: ColumnMode = "all",
-    ) -> tuple[str, list[object], int, SourceColumnProjection]:
+        filters: ColumnFilters | None = None,
+    ) -> tuple[str, str, list[object], int, SourceColumnProjection]:
         if self.result is None:
             raise DataAnalysisNotSucceededError()
         if item_index < 0:
@@ -335,16 +353,28 @@ class DataAnalysisJob:
         else:
             raise DataAnalysisTargetNotFoundError()
 
+        filter_conditions, filter_parameters = row_filter_conditions(
+            filters or {},
+            self.analysis_inputs.column_names,
+            lambda source_column_index, sqlite_column: (
+                f"{value_function_name(source_column_index)}({sqlite_column}) IS NULL"
+            ),
+        )
+        conditions.extend(filter_conditions)
+        parameters.extend(filter_parameters)
+
         column_projection = source_column_projection(
             self.analysis_inputs.column_names,
             self.result.selected_columns,
             column_mode,
         )
+        where_clause = " AND ".join(conditions)
         query = (
             f'SELECT {", ".join(column_projection.sqlite_columns)} FROM "input_rows" '
-            f'WHERE {" AND ".join(conditions)} ORDER BY rowid ASC'
+            f"WHERE {where_clause} ORDER BY rowid ASC"
         )
-        return query, parameters, matching_row_count, column_projection
+        count_query = f'SELECT count(*) FROM "input_rows" WHERE {where_clause}'
+        return query, count_query, parameters, matching_row_count, column_projection
 
     def _run_analysis(self) -> None:
         connection: sqlite3.Connection | None = None

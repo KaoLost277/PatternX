@@ -160,7 +160,7 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
         "group_data",
         csv_bytes,
         ["Department", "Approval_Status"],
-        {"Approval_Status": ["N/A"]},
+        {"Approval_Status": ["N/A"], "record_id": ["4"]},
     )
 
     assert status["state"] == "succeeded"
@@ -192,6 +192,17 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
         ["3", "Finance", None],
         ["4", "Finance", "N/A"],
     ]
+    filtered_rows_response = client.get(
+        f"/api/data-analysis-jobs/{status['job_id']}/rows",
+        params={
+            "target_kind": "group",
+            "item_index": repeated_group_index,
+            "filters": json.dumps({"record_id": {"kind": "missing"}}),
+        },
+    )
+    assert filtered_rows_response.status_code == 200
+    assert filtered_rows_response.json()["rows"] == [["4", "Finance", "N/A"]]
+    assert filtered_rows_response.json()["total_rows"] == 1
 
     export_response = client.get(
         f"/api/data-analysis-jobs/{status['job_id']}/exports/rows.csv",
@@ -203,6 +214,14 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
             "target_kind": "group",
             "item_index": repeated_group_index,
             "column_mode": "analysis",
+        },
+    )
+    filtered_export_response = client.get(
+        f"/api/data-analysis-jobs/{status['job_id']}/exports/rows.csv",
+        params={
+            "target_kind": "group",
+            "item_index": repeated_group_index,
+            "filters": json.dumps({"record_id": {"kind": "missing"}}),
         },
     )
     assert export_response.status_code == 200
@@ -219,6 +238,11 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
         ["Department", "Approval_Status"],
         ["Finance", ""],
         ["Finance", "N/A"],
+    ]
+    assert filtered_export_response.status_code == 200
+    assert list(csv.reader(io.StringIO(filtered_export_response.text.lstrip("\ufeff")))) == [
+        ["record_id", "Department", "Approval_Status"],
+        ["4", "Finance", "N/A"],
     ]
 
 

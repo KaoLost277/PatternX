@@ -353,6 +353,37 @@ def test_pattern_rows_export_includes_all_source_ordered_rows_as_inert_csv():
     ]
 
 
+def test_pattern_row_export_contains_only_rows_matching_column_filters():
+    status = run_export_analysis(
+        client,
+        b"record_id,status,region\n"
+        b"R1,complete,North\n"
+        b"R2,complete,South\n"
+        b"R3,complete,north\n"
+        b"R4,,North\n",
+        ["status"],
+    )
+    assert status["state"] == "succeeded"
+    matching_pattern_index = next(
+        index
+        for index, pattern in enumerate(status["result"]["patterns"])
+        if pattern["statuses"] == ["present"]
+    )
+    filters = json.dumps({"region": {"kind": "contains", "value": "NORTH"}})
+
+    response = client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/{matching_pattern_index}/exports/rows.csv",
+        params={"filters": filters},
+    )
+
+    assert response.status_code == 200
+    assert parse_export_csv(response) == [
+        ["record_id", "status", "region"],
+        ["R1", "complete", "North"],
+        ["R3", "complete", "north"],
+    ]
+
+
 def test_pattern_rows_export_rejects_unknown_job_pattern_and_failed_analysis(tmp_path):
     work_directory = tmp_path / "work"
     test_client = make_test_client(work_directory)
