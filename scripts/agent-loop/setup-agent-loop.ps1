@@ -68,6 +68,7 @@ if ($reuseExistingConfiguration) {
 Write-Host "Default branch: $($setupResult.DefaultBranch)"
 Write-Host "Configuration: $($setupResult.ConfigurationPath)"
 Write-Host "Reasoning budget: $($setupResult.ReasoningBudget)"
+Write-Host "Reviewer models configured: $($setupResult.Models.Reviewers.Count) (rerun with -Force to change)"
 Write-Host "GitHub repository write scope: verified"
 
 foreach ($roleName in @("Implementer", "Repairer")) {

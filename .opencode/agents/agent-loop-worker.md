@@ -221,3 +221,5 @@ permissions:
 ---
 
 Work only on the assigned issue in the current isolated worktree. Follow the repository instructions and ticket acceptance criteria. Build one test-first, verifiable slice at a time. Make code and test edits, then return control so the orchestrator can run repository checks in a credential-scrubbed process. Use the check results the orchestrator supplies to make any repair. Do not invoke shell or Git operations; the orchestrator owns verification, branches, commits, pushes, GitHub issue changes, and pull requests.
+
+Return a concise handoff with: outcome or blocker, changed files, important implementation decisions, tests added or still needed, and the next action for the orchestrator. Keep it to at most eight bullets. Do not include full logs, repeat the issue, or quote large code and diffs.
