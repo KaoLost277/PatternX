@@ -365,7 +365,7 @@ export function DataAnalysisPanel({
       : null;
   return (
     <>
-      <div className="analysis-mode-content" hidden={hidden}>
+      <div className="grid min-w-0 gap-4" hidden={hidden}>
         <CollapsibleSection
           title={`${titleForAnalysis(analysisKind)} Setup`}
           summary={`${selectedColumns.length} columns selected`}

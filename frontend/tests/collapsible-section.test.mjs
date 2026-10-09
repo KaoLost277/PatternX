@@ -59,14 +59,15 @@ test("section content remains available when the disclosure starts collapsed", a
   assert.match(markup, /<p>Pattern table<\/p>/);
 });
 
-test("the file and worksheet section is expanded on the initial app view", async () => {
+test("the shared dataset context and file picker appear on the initial app view", async () => {
   const { default: App } = await viteServer.ssrLoadModule("/src/App.tsx");
   const markup = renderToStaticMarkup(React.createElement(App));
 
-  assert.match(markup, /<details class="collapsible-section" open="">/);
   assert.match(
     markup,
-    /<summary[^>]*>.*File and Worksheet.*Choose a CSV or XLSX file.*<\/summary>/,
+    /<section[^>]*aria-labelledby="shared-context-heading"/,
   );
-  assert.match(markup, /<label class="file-picker"><span>CSV or XLSX file<\/span>/);
+  assert.match(markup, /<h2 id="shared-context-heading"[^>]*>Shared data context<\/h2>/);
+  assert.match(markup, /<label[^>]*><span>CSV or XLSX file<\/span>/);
+  assert.match(markup, /<summary[^>]*>.*Missing Value settings/);
 });

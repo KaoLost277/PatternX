@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { after, test } from "node:test";
@@ -10,8 +9,6 @@ const viteServer = await createServer({
   server: { middlewareMode: true, hmr: false },
   appType: "custom",
 });
-
-const appStyles = readFileSync(new URL("../src/App.css", import.meta.url), "utf8");
 
 after(async () => {
   await viteServer.close();
@@ -41,20 +38,97 @@ test("Group Data mode renders explicit selected-column controls", async () => {
   assert.match(markup, /Every Input Row is grouped by the observed combination/);
 });
 
-test("the top navigation shows the app title and disables mode selection before import", async () => {
+test("the top navigation exposes all analysis modes as disabled tabs before import", async () => {
   const { default: App } = await viteServer.ssrLoadModule("/src/App.tsx");
   const markup = renderToStaticMarkup(React.createElement(App));
 
-  assert.match(markup, /class="top-navbar"/);
-  assert.match(markup, /<h1 class="navbar-app-name">PatternX Data Profiler<\/h1>/);
-  assert.match(markup, /aria-label="Analysis menu"[^>]*disabled=""/);
-  assert.match(markup, /No file loaded/);
-  assert.doesNotMatch(markup, /class="analysis-mode-cards"/);
+  assert.match(markup, /<h1[^>]*>PatternX Data Profiler<\/h1>/);
+  assert.match(markup, /<nav[^>]*aria-label="Analysis modes"[^>]*role="tablist"/);
+  for (const mode of ["Completeness Patterns", "Formal Terms", "Group Data"]) {
+    const tabButtonPattern = new RegExp(
+      `<button[^>]*role="tab"[^>]*disabled=""[^>]*>${mode}<\\/button>`,
+    );
+    assert.match(markup, tabButtonPattern);
+  }
+  for (const mode of ["completeness", "formal_terms", "group_data"]) {
+    assert.match(markup, new RegExp(`aria-controls="analysis-panel-${mode}"`));
+    assert.match(markup, new RegExp(`id="analysis-panel-${mode}"[^>]*role="tabpanel"`));
+  }
+  assert.match(markup, /No dataset loaded/);
 });
 
-test("the hamburger navigation is sticky and opens from the left side", () => {
-  assert.match(appStyles, /\.top-navbar\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;[^}]*z-index:\s*10;/s);
-  assert.match(appStyles, /\.analysis-mode-navigation\s*\{[^}]*position:\s*absolute;[^}]*left:\s*0;/s);
+test("the selected analysis tab exposes its active state", async () => {
+  const { AnalysisModeTabs } = await viteServer.ssrLoadModule(
+    "/src/AnalysisModeTabs.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(AnalysisModeTabs, {
+      selectedMode: "formal_terms",
+      enabled: true,
+      onSelect: () => {},
+    }),
+  );
+
+  assert.match(markup, /role="tablist"/);
+  assert.match(markup, /<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Formal Terms<\/button>/);
+  assert.match(markup, /id="analysis-tab-formal_terms"/);
+  assert.match(markup, /aria-controls="analysis-panel-formal_terms"/);
+});
+
+test("the shared dataset context keeps file, worksheet, and Missing Value controls together", async () => {
+  const { default: App } = await viteServer.ssrLoadModule("/src/App.tsx");
+  const markup = renderToStaticMarkup(React.createElement(App));
+
+  assert.match(markup, /aria-labelledby="shared-context-heading"/);
+  assert.match(markup, /CSV or XLSX file/);
+  assert.match(markup, /Worksheet/);
+  assert.match(markup, /<summary[^>]*>.*Missing Value settings/);
+  assert.match(markup, /Import a file to configure Missing Value markers/);
+});
+
+test("the shared context identifies the active file, worksheet, and columns", async () => {
+  const { SharedDatasetContextPanel } = await viteServer.ssrLoadModule(
+    "/src/SharedDatasetContextPanel.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(
+      SharedDatasetContextPanel,
+      {
+        fileName: "quarterly & annual.xlsx",
+        worksheetName: "Quarterly Summary",
+        hasWorksheets: true,
+        columnCount: 4,
+      },
+      React.createElement("p", null, "Shared Missing Value rules"),
+    ),
+  );
+
+  assert.match(markup, /aria-labelledby="shared-context-heading"/);
+  assert.match(markup, /quarterly &amp; annual\.xlsx/);
+  assert.match(markup, /Quarterly Summary/);
+  assert.match(markup, /4 columns/);
+  assert.match(markup, /Shared Missing Value rules/);
+});
+
+test("the shared context does not show a worksheet as active before one is imported", async () => {
+  const { SharedDatasetContextPanel } = await viteServer.ssrLoadModule(
+    "/src/SharedDatasetContextPanel.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(
+      SharedDatasetContextPanel,
+      {
+        fileName: "quarterly.xlsx",
+        worksheetName: "",
+        hasWorksheets: true,
+        columnCount: 0,
+      },
+      React.createElement("p", null, "Shared Missing Value rules"),
+    ),
+  );
+
+  assert.match(markup, /quarterly\.xlsx/);
+  assert.match(markup, /Choose a worksheet/);
 });
 
 test("data-analysis row details render source values as inert text", async () => {

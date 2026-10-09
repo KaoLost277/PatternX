@@ -1,4 +1,8 @@
-:root {
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+
   --color-page: #f6f7f8;
   --color-surface: #ffffff;
   --color-surface-muted: #f8f9fa;
@@ -10,59 +14,52 @@
   --color-border-strong: #c5cdd5;
   --color-accent: #39749a;
   --color-accent-hover: #2d617f;
+  --color-action-primary: #39749a;
+  --color-action-primary-hover: #2d617f;
+  --color-action-secondary: #ffffff;
+  --color-focus-ring: #1d4ed8;
+  --color-error-surface: #fef2f2;
+  --color-error-border: #fecaca;
+  --color-error-text: #7f1d1d;
+  --color-warning-surface: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-warning-text: #92400e;
+
+  --spacing-page: clamp(0.75rem, 3vw, 2rem);
+  --spacing-panel: 1.25rem;
+  --radius-panel: 0.75rem;
+  --radius-control: 0.625rem;
   --shadow-card: 0 1px 3px rgba(35, 45, 55, 0.06);
   --shadow-dialog: 0 8px 24px rgba(15, 23, 42, 0.12);
-
-  color-scheme: light;
-  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
-  line-height: 1.5;
-  color: var(--color-text);
-  background-color: var(--color-page);
-  accent-color: var(--color-accent);
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+@layer base {
+  :root {
+    color-scheme: light;
+    accent-color: var(--color-accent);
+  }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background-color: var(--color-page);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
 
-button,
-input,
-select {
-  font: inherit;
-}
+  button,
+  input,
+  select {
+    font: inherit;
+  }
 
-h1,
-h2,
-h3 {
-  line-height: 1.25;
-  color: var(--color-text);
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(1.75rem, 2.6vw, 2rem);
-  font-weight: 650;
-  letter-spacing: -0.035em;
-}
-
-h2 {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-
-h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    color: var(--color-text);
+    line-height: 1.25;
+  }
 }
