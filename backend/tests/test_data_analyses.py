@@ -197,6 +197,14 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
         f"/api/data-analysis-jobs/{status['job_id']}/exports/rows.csv",
         params={"target_kind": "group", "item_index": repeated_group_index},
     )
+    analysis_columns_export_response = client.get(
+        f"/api/data-analysis-jobs/{status['job_id']}/exports/rows.csv",
+        params={
+            "target_kind": "group",
+            "item_index": repeated_group_index,
+            "column_mode": "analysis",
+        },
+    )
     assert export_response.status_code == 200
     export_rows = list(csv.reader(io.StringIO(export_response.text.lstrip("\ufeff"))))
     assert export_rows == [
@@ -204,6 +212,61 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
         ["3", "Finance", ""],
         ["4", "Finance", "N/A"],
     ]
+    assert analysis_columns_export_response.status_code == 200
+    assert list(
+        csv.reader(io.StringIO(analysis_columns_export_response.text.lstrip("\ufeff")))
+    ) == [
+        ["Department", "Approval_Status"],
+        ["Finance", ""],
+        ["Finance", "N/A"],
+    ]
+
+
+def test_analysis_column_exports_use_source_order_and_all_matching_rows(tmp_path):
+    client = make_test_client(tmp_path / "work")
+    row_count = 107
+    csv_lines = ["record_id,z_value,a_value,notes"]
+    for row_index in range(row_count):
+        csv_lines.append(f"R{row_index:03},z-{row_index:03},shared,note-{row_index:03}")
+
+    status = run_data_analysis(
+        client,
+        "formal_terms",
+        "\n".join(csv_lines).encode("utf-8"),
+        ["a_value", "z_value"],
+    )
+    term_index = next(
+        index
+        for index, term in enumerate(status["result"]["columns"][0]["terms"])
+        if term["value"] == "shared"
+    )
+
+    all_columns_response = client.get(
+        f"/api/data-analysis-jobs/{status['job_id']}/exports/rows.csv",
+        params={"target_kind": "term", "column_index": 0, "item_index": term_index},
+    )
+    analysis_columns_response = client.get(
+        f"/api/data-analysis-jobs/{status['job_id']}/exports/rows.csv",
+        params={
+            "target_kind": "term",
+            "column_index": 0,
+            "item_index": term_index,
+            "column_mode": "analysis",
+        },
+    )
+
+    all_export_rows = list(csv.reader(io.StringIO(all_columns_response.text.lstrip("\ufeff"))))
+    analysis_export_rows = list(
+        csv.reader(io.StringIO(analysis_columns_response.text.lstrip("\ufeff")))
+    )
+    assert all_export_rows[0] == ["record_id", "z_value", "a_value", "notes"]
+    assert len(all_export_rows) == row_count + 1
+    assert all_export_rows[1] == ["R000", "z-000", "shared", "note-000"]
+    assert all_export_rows[-1] == ["R106", "z-106", "shared", "note-106"]
+    assert analysis_export_rows[0] == ["z_value", "a_value"]
+    assert len(analysis_export_rows) == row_count + 1
+    assert analysis_export_rows[1] == ["z-000", "shared"]
+    assert analysis_export_rows[-1] == ["z-106", "shared"]
 
 
 def test_data_analysis_jobs_are_retained_per_mode_and_cleared_on_new_import(tmp_path):

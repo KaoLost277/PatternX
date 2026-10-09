@@ -28,6 +28,9 @@ async function renderPatternDetails(dialogProps) {
 function patternDetailsProps(overrides = {}) {
   return {
     patternCount: 0,
+    analysisColumns: [],
+    columnMode: "all",
+    onColumnModeChange: () => {},
     page: null,
     requestedPage: 1,
     loading: false,
@@ -51,6 +54,9 @@ test("the populated View rows panel contains a semantic table of every returned 
   const hostileValue = "<img src=x onerror=alert(1)>";
   const markup = renderDetailsDialog(PatternRowsDialog, {
     patternCount: 2,
+    analysisColumns: ["<script>source</script>"],
+    columnMode: "all",
+    onColumnModeChange: () => {},
     page: {
       columns: sourceColumns,
       rows: [
@@ -101,6 +107,79 @@ test("the populated View rows panel contains a semantic table of every returned 
   assert.ok(markup.indexOf("record_id") < firstHostileHeaderPosition);
   assert.ok(firstHostileHeaderPosition < markup.indexOf("unselected_source_column"));
   assert.ok(markup.indexOf("&lt;img") < markup.indexOf("second row"));
+  assert.match(markup, /All source columns/);
+  assert.match(markup, /Columns used in analysis/);
+});
+
+test("pattern details show analysis columns in source order without the Identifier Column", async () => {
+  const markup = await renderPatternDetails(
+    patternDetailsProps({
+      patternCount: 1,
+      columnMode: "analysis",
+      analysisColumns: ["phone", "email"],
+      page: {
+        columns: ["record_id", "email", "phone", "notes"],
+        rows: [["A1", "ada@example.com", "555-0100", "row note"]],
+        page: 1,
+        page_size: 50,
+        total_rows: 1,
+      },
+    }),
+  );
+  const tableRegion = markup.match(
+    /<div[^>]*role="region"[^>]*aria-label="Input Rows table\. Scroll to view additional columns or rows\."[^>]*>([\s\S]*?)<\/div>/,
+  )?.[1];
+
+  assert.ok(tableRegion);
+  assert.match(tableRegion, /<th[^>]*>email<\/th>[\s\S]*?<th[^>]*>phone<\/th>/);
+  assert.match(tableRegion, /<td[^>]*><span[^>]*>ada@example\.com<\/span><\/td>/);
+  assert.match(tableRegion, /<td[^>]*><span[^>]*>555-0100<\/span><\/td>/);
+  assert.doesNotMatch(tableRegion, /record_id|A1|notes|row note/);
+  assert.equal((tableRegion.match(/<th\b/g) ?? []).length, 2);
+  assert.equal((tableRegion.match(/<td\b/g) ?? []).length, 2);
+});
+
+test("pattern details fall back to all source columns if the analysis set has no match", async () => {
+  const markup = await renderPatternDetails(
+    patternDetailsProps({
+      patternCount: 1,
+      columnMode: "analysis",
+      analysisColumns: ["missing-analysis-column"],
+      page: {
+        columns: ["record_id", "source_value"],
+        rows: [["A1", "present"]],
+        page: 1,
+        page_size: 50,
+        total_rows: 1,
+      },
+    }),
+  );
+  const tableRegion = markup.match(
+    /<div[^>]*role="region"[^>]*aria-label="Input Rows table\. Scroll to view additional columns or rows\."[^>]*>([\s\S]*?)<\/div>/,
+  )?.[1];
+
+  assert.ok(tableRegion);
+  assert.match(tableRegion, /record_id[\s\S]*?source_value/);
+  assert.equal((tableRegion.match(/<th\b/g) ?? []).length, 2);
+});
+
+test("visible-row projection filters headers and cells together in source order", async () => {
+  const { projectVisibleRows } = await viteServer.ssrLoadModule(
+    "/src/rowColumnMode.ts",
+  );
+
+  assert.deepEqual(
+    projectVisibleRows(
+      ["record_id", "email", "phone", "notes"],
+      [["A1", "ada@example.com", "555-0100", "first"]],
+      ["phone", "email"],
+      "analysis",
+    ),
+    {
+      columns: ["email", "phone"],
+      rows: [["ada@example.com", "555-0100"]],
+    },
+  );
 });
 
 test("pattern row requests use the job and canonical pattern index with the selected page", async () => {
@@ -218,6 +297,32 @@ test("pattern CSV downloads request the canonical pattern and provide a practica
     }
     URL.createObjectURL = previousCreateObjectURL;
     URL.revokeObjectURL = previousRevokeObjectURL;
+  }
+});
+
+test("pattern CSV exports request the analysis-column mode when selected", async () => {
+  const { downloadPatternRowsCsv } = await viteServer.ssrLoadModule("/src/patternRows.ts");
+  const previousFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = async (url) => {
+    requestedUrl = url;
+    return {
+      ok: false,
+      json: async () => ({ detail: "Expected export failure for request inspection." }),
+    };
+  };
+
+  try {
+    await assert.rejects(
+      downloadPatternRowsCsv("job-123", 4, "analysis"),
+      /Expected export failure for request inspection\./,
+    );
+    assert.equal(
+      requestedUrl,
+      "/api/analysis-jobs/job-123/patterns/4/exports/rows.csv?column_mode=analysis",
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
   }
 });
 

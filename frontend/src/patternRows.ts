@@ -1,3 +1,5 @@
+import type { RowColumnMode } from "./rowColumnMode";
+
 export interface PatternRowsPage {
   columns: string[];
   rows: (string | null)[][];
@@ -51,10 +53,14 @@ export async function fetchPatternRowsPage(
   return responseBody;
 }
 
-export async function downloadPatternRowsCsv(jobId: string, patternIndex: number): Promise<void> {
+export async function downloadPatternRowsCsv(
+  jobId: string,
+  patternIndex: number,
+  columnMode: RowColumnMode = "all",
+): Promise<void> {
   const encodedJobId = encodeURIComponent(jobId);
-  const exportUrl =
-    `/api/analysis-jobs/${encodedJobId}/patterns/${patternIndex}/exports/rows.csv`;
+  const columnModeQuery = columnMode === "analysis" ? "?column_mode=analysis" : "";
+  const exportUrl = `/api/analysis-jobs/${encodedJobId}/patterns/${patternIndex}/exports/rows.csv${columnModeQuery}`;
 
   let response: Response;
   try {

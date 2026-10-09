@@ -28,6 +28,11 @@ from app.data_analyses import (
     value_function_name,
 )
 from app.patterns import AnalysisCancelledError
+from app.row_details import (
+    ColumnMode,
+    SourceColumnProjection,
+    source_column_projection,
+)
 from app.sqlite_storage import CSVFileError, CSVImportCancelledError, load_csv_into_database, open_analysis_database
 from app.workfiles import clean_up_job, clean_up_job_sources
 
@@ -205,7 +210,7 @@ class DataAnalysisJob:
             if self.state != JOB_STATE_SUCCEEDED or self.result is None:
                 raise DataAnalysisNotSucceededError()
 
-            query, parameters, matching_row_count = self._rows_query(
+            query, parameters, matching_row_count, _ = self._rows_query(
                 target_kind,
                 item_index,
                 column_index,
@@ -241,6 +246,7 @@ class DataAnalysisJob:
         target_kind: str,
         item_index: int,
         column_index: int | None,
+        column_mode: ColumnMode = "all",
     ) -> tuple[list[str], DataAnalysisRowsExport]:
         self._lock.acquire()
         connection: sqlite3.Connection | None = None
@@ -248,7 +254,12 @@ class DataAnalysisJob:
             if self.state != JOB_STATE_SUCCEEDED or self.result is None:
                 raise DataAnalysisNotSucceededError()
 
-            query, parameters, _ = self._rows_query(target_kind, item_index, column_index)
+            query, parameters, _, column_projection = self._rows_query(
+                target_kind,
+                item_index,
+                column_index,
+                column_mode,
+            )
             database_uri = self.analysis_inputs.database_path.resolve().as_uri() + "?mode=ro"
             connection = sqlite3.connect(database_uri, uri=True, check_same_thread=False)
             register_data_value_functions(
@@ -261,7 +272,7 @@ class DataAnalysisJob:
                 connection,
                 self._lock,
             )
-            return list(self.analysis_inputs.column_names), rows
+            return list(column_projection.names), rows
         except BaseException:
             try:
                 if connection is not None:
@@ -275,7 +286,8 @@ class DataAnalysisJob:
         target_kind: str,
         item_index: int,
         column_index: int | None,
-    ) -> tuple[str, list[object], int]:
+        column_mode: ColumnMode = "all",
+    ) -> tuple[str, list[object], int, SourceColumnProjection]:
         if self.result is None:
             raise DataAnalysisNotSucceededError()
         if item_index < 0:
@@ -323,15 +335,16 @@ class DataAnalysisJob:
         else:
             raise DataAnalysisTargetNotFoundError()
 
-        source_columns = [
-            sqlite_column_name(index)
-            for index in range(len(self.analysis_inputs.column_names))
-        ]
+        column_projection = source_column_projection(
+            self.analysis_inputs.column_names,
+            self.result.selected_columns,
+            column_mode,
+        )
         query = (
-            f'SELECT {", ".join(source_columns)} FROM "input_rows" '
+            f'SELECT {", ".join(column_projection.sqlite_columns)} FROM "input_rows" '
             f'WHERE {" AND ".join(conditions)} ORDER BY rowid ASC'
         )
-        return query, parameters, matching_row_count
+        return query, parameters, matching_row_count, column_projection
 
     def _run_analysis(self) -> None:
         connection: sqlite3.Connection | None = None

@@ -269,6 +269,9 @@ test("data-analysis row details render source values as inert text", async () =>
       title: "Rows for a term",
       targetDescription: 'the term "<script>unsafe</script>"',
       matchingRowCount: 1,
+      columnMode: "all",
+      analysisColumns: ["value"],
+      onColumnModeChange: () => {},
       page: {
         columns: ["<img src=x onerror=alert(1)>", "value"],
         rows: [["<script>unsafe</script>", "safe"]],
@@ -293,6 +296,8 @@ test("data-analysis row details render source values as inert text", async () =>
   assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(markup, /<script\b|<img\b/i);
   assert.match(markup, /Download all matching rows as CSV/);
+  assert.match(markup, /All source columns/);
+  assert.match(markup, /Columns used in analysis/);
   assert.match(markup, /Page 1 of 1/);
 });
 
@@ -304,6 +309,9 @@ test("shared data-analysis row details distinguish loading, empty, error, and ex
     title: "Rows for a Formal Term",
     targetDescription: 'the term "example"',
     matchingRowCount: 1,
+    columnMode: "all",
+    analysisColumns: [],
+    onColumnModeChange: () => {},
     page: null,
     requestedPage: 1,
     loading: false,
@@ -353,6 +361,48 @@ test("shared data-analysis row details distinguish loading, empty, error, and ex
   assert.match(exportSuccessMarkup, /CSV download started\./);
 });
 
+test("data-analysis details can render only the completed analysis columns", async () => {
+  const { DataAnalysisRowsDialog } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisRowsDialog.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(DataAnalysisRowsDialog, {
+      title: "Rows for a Formal Term",
+      targetDescription: 'the term "example"',
+      matchingRowCount: 1,
+      columnMode: "analysis",
+      analysisColumns: ["value"],
+      onColumnModeChange: () => {},
+      page: {
+        columns: ["record_id", "value", "unselected"],
+        rows: [["A1", "example", "not used"]],
+        page: 1,
+        page_size: 50,
+        total_rows: 1,
+      },
+      requestedPage: 1,
+      loading: false,
+      error: null,
+      onPageChange: () => {},
+      onRetry: () => {},
+      exportLoading: false,
+      exportError: null,
+      exportSuccess: null,
+      onExport: () => {},
+      onClose: () => {},
+    }),
+  );
+  const tableRegion = markup.match(
+    /<div[^>]*role="region"[^>]*aria-label="Matching Input Rows\. Scroll to view additional columns or rows\."[^>]*>([\s\S]*?)<\/div>/,
+  )?.[1];
+
+  assert.ok(tableRegion);
+  assert.match(tableRegion, /<th[^>]*>value<\/th>[\s\S]*?<td[^>]*><span[^>]*>example<\/span><\/td>/);
+  assert.doesNotMatch(tableRegion, /record_id|A1|unselected|not used/);
+  assert.equal((tableRegion.match(/<th\b/g) ?? []).length, 1);
+  assert.equal((tableRegion.match(/<td\b/g) ?? []).length, 1);
+});
+
 test("data-analysis row requests include the selected result target and page", async () => {
   const { fetchDataAnalysisRowsPage } = await viteServer.ssrLoadModule(
     "/src/dataAnalysisApi.ts",
@@ -391,6 +441,39 @@ test("data-analysis row requests include the selected result target and page", a
     assert.equal(requestedSignal, requestSignal);
     assert.equal(page.page, 2);
     assert.equal(page.total_rows, 51);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("data-analysis CSV exports request the active column mode", async () => {
+  const { downloadDataAnalysisRowsCsv } = await viteServer.ssrLoadModule(
+    "/src/dataAnalysisApi.ts",
+  );
+  const previousFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = async (url) => {
+    requestedUrl = url;
+    return {
+      ok: false,
+      json: async () => ({ detail: "Expected export failure for request inspection." }),
+    };
+  };
+
+  try {
+    await assert.rejects(
+      downloadDataAnalysisRowsCsv(
+        "job-123",
+        "formal_terms",
+        { kind: "term", columnIndex: 2, itemIndex: 7 },
+        "analysis",
+      ),
+      /Expected export failure for request inspection\./,
+    );
+    assert.equal(
+      requestedUrl,
+      "/api/data-analysis-jobs/job-123/exports/rows.csv?target_kind=term&item_index=7&column_index=2&column_mode=analysis",
+    );
   } finally {
     globalThis.fetch = previousFetch;
   }
