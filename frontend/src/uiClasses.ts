@@ -61,7 +61,7 @@ export const collapsibleSummaryClasses = [
 ].join(" ");
 
 export const sortableHeaderButtonClasses = [
-  "flex min-h-10 w-full items-center justify-between gap-2 bg-transparent p-0",
+  "flex min-h-10 items-center justify-between gap-2 bg-transparent p-0",
   "text-left font-[inherit] text-inherit hover:text-text focus-visible:rounded-sm",
   "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
 ].join(" ");
@@ -114,7 +114,8 @@ export const dataAnalysisActionHeaderClasses = [
   "shadow-[1px_0_0_var(--color-border)]",
 ].join(" ");
 
-export const dataAnalysisSortableHeaderClasses = "sticky top-0 z-10 bg-surface-muted";
+export const dataAnalysisSortableHeaderClasses =
+  "sticky top-0 z-10 min-w-[7.5rem] bg-surface-muted";
 
 export const dataAnalysisActionCellClasses =
   "sticky left-0 z-10 min-w-28 bg-surface shadow-[1px_0_0_var(--color-border)]";
