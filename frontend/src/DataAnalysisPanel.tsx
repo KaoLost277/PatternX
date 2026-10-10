@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   DataAnalysisRequestError,
@@ -14,27 +14,35 @@ import type {
   DataAnalysisRowsPage,
   DataFormatPattern,
   DataGroup,
+  DataTerm,
   FormalColumnTerms,
   FormalTermsSummary,
   GroupDataSummary,
 } from "./dataAnalysisApi";
 import { DataAnalysisRowsDialog } from "./DataAnalysisRowsDialog";
+import { AnalysisSummaryTable } from "./AnalysisSummaryTable";
 import type { RowColumnMode } from "./rowColumnMode";
 import type { RowColumnFilters } from "./rowFilters";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { formatShare } from "./displayFormat";
 import {
+  compareNumbers,
+  compareNullableText,
+  compareText,
+} from "./tableSorting";
+import type { SummaryTableColumn } from "./summaryTable";
+import {
   analysisOptionClasses,
-  dataAnalysisActionCellClasses,
-  dataAnalysisActionHeaderClasses,
   errorMessageClasses,
   hintTextClasses,
   primaryButtonClasses,
   secondaryButtonClasses,
   statusTextClasses,
-  summaryTableClasses,
-  summaryTableFrameClasses,
 } from "./uiClasses";
+
+type TermSortKey = "term" | "count" | "share";
+type FormatPatternSortKey = "format" | "occurrences" | "distinctTerms" | "share";
+type GroupDataSortKey = `value:${number}` | "count" | "share";
 
 interface DataAnalysisPanelProps {
   analysisKind: DataAnalysisKind;
@@ -57,8 +65,6 @@ interface SelectedDetail {
 
 const JOB_STATE_RUNNING = "running";
 const JOB_STATE_SUCCEEDED = "succeeded";
-const TERMS_SHOWN_BY_DEFAULT = 10;
-const GROUPS_SHOWN_BY_DEFAULT = 10;
 const JOB_POLL_INTERVAL_MILLISECONDS = 500;
 
 function titleForAnalysis(analysisKind: DataAnalysisKind): string {
@@ -75,14 +81,126 @@ function formatTerm(value: string | null): string {
   return value === null ? "(blank)" : value;
 }
 
+const termSummaryColumns: readonly SummaryTableColumn<DataTerm, TermSortKey>[] = [
+  {
+    key: "term",
+    label: "Term",
+    filterValue: { kind: "nullable-text", read: (term) => term.value },
+    compare: (left, right) => compareNullableText(left.value, right.value),
+    renderCell: (term) => (
+      <span className="[overflow-wrap:anywhere]">{formatTerm(term.value)}</span>
+    ),
+    rowHeader: true,
+  },
+  {
+    key: "count",
+    label: "Input Rows",
+    filterValue: { kind: "text", read: (term) => term.count.toLocaleString() },
+    compare: (left, right) => compareNumbers(left.count, right.count),
+    renderCell: (term) => term.count.toLocaleString(),
+  },
+  {
+    key: "share",
+    label: "Share",
+    filterValue: { kind: "text", read: (term) => formatShare(term.share) },
+    compare: (left, right) => compareNumbers(left.share, right.share),
+    renderCell: (term) => formatShare(term.share),
+  },
+];
+
+const formatPatternSummaryColumns: readonly SummaryTableColumn<
+  DataFormatPattern,
+  FormatPatternSortKey
+>[] = [
+  {
+    key: "format",
+    label: "Format",
+    filterValue: { kind: "text", read: (pattern) => pattern.pattern },
+    compare: (left, right) => compareText(left.pattern, right.pattern),
+    renderCell: (pattern) => (
+      <span className="[overflow-wrap:anywhere]">{pattern.pattern}</span>
+    ),
+  },
+  {
+    key: "occurrences",
+    label: "Occurrences",
+    filterValue: {
+      kind: "text",
+      read: (pattern) => pattern.occurrence_count.toLocaleString(),
+    },
+    compare: (left, right) => compareNumbers(left.occurrence_count, right.occurrence_count),
+    renderCell: (pattern) => pattern.occurrence_count.toLocaleString(),
+  },
+  {
+    key: "distinctTerms",
+    label: "Distinct terms",
+    filterValue: {
+      kind: "text",
+      read: (pattern) => pattern.distinct_term_count.toLocaleString(),
+    },
+    compare: (left, right) => compareNumbers(left.distinct_term_count, right.distinct_term_count),
+    renderCell: (pattern) => pattern.distinct_term_count.toLocaleString(),
+  },
+  {
+    key: "share",
+    label: "Share",
+    filterValue: { kind: "text", read: (pattern) => formatShare(pattern.share) },
+    compare: (left, right) => compareNumbers(left.share, right.share),
+    renderCell: (pattern) => formatShare(pattern.share),
+  },
+];
+
+function groupDataSummaryColumns(
+  selectedColumns: readonly string[],
+): SummaryTableColumn<DataGroup, GroupDataSortKey>[] {
+  const valueColumns = selectedColumns.map(
+    (columnName, columnIndex): SummaryTableColumn<DataGroup, GroupDataSortKey> => ({
+      key: `value:${columnIndex}`,
+      label: columnName,
+      filterValue: {
+        kind: "nullable-text",
+        read: (group) => group.values[columnIndex] ?? null,
+      },
+      compare: (left, right) =>
+        compareNullableText(
+          left.values[columnIndex] ?? null,
+          right.values[columnIndex] ?? null,
+        ),
+      renderCell: (group) => (
+        <span className="[overflow-wrap:anywhere]">
+          {formatTerm(group.values[columnIndex] ?? null)}
+        </span>
+      ),
+    }),
+  );
+
+  return [
+    ...valueColumns,
+    {
+      key: "count",
+      label: "Input Rows",
+      filterValue: { kind: "text", read: (group) => group.count.toLocaleString() },
+      compare: (left, right) => compareNumbers(left.count, right.count),
+      renderCell: (group) => group.count.toLocaleString(),
+    },
+    {
+      key: "share",
+      label: "Share",
+      filterValue: { kind: "text", read: (group) => formatShare(group.share) },
+      compare: (left, right) => compareNumbers(left.share, right.share),
+      renderCell: (group) => formatShare(group.share),
+    },
+  ];
+}
+
 function detailTargetForTerm(
   columnIndex: number,
-  termIndex: number,
+  sourceIndex: number,
   termValue: string | null,
   count: number,
 ): SelectedDetail {
   return {
-    target: { kind: "term", columnIndex, itemIndex: termIndex },
+    target: { kind: "term", columnIndex, itemIndex: sourceIndex },
     title: "Input Rows for a Formal Term",
     description: `the term ${JSON.stringify(formatTerm(termValue))}`,
     count,
@@ -122,8 +240,6 @@ export function DataAnalysisPanel({
   const [exportLoading, setExportLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
-  const [showAllTerms, setShowAllTerms] = useState<Record<string, boolean>>({});
-  const [showAllGroups, setShowAllGroups] = useState(false);
   const [setupExpanded, setSetupExpanded] = useState(true);
   const [resultsExpanded, setResultsExpanded] = useState(true);
   const columnSelectionRef = useRef<HTMLFieldSetElement>(null);
@@ -228,8 +344,6 @@ export function DataAnalysisPanel({
     setDetail(null);
     setDetailPage(null);
     setDetailFilters({});
-    setShowAllTerms({});
-    setShowAllGroups(false);
   }
 
   function focusColumnSelection() {
@@ -382,17 +496,6 @@ export function DataAnalysisPanel({
     setDetailColumnMode("all");
   }
 
-  function handleShowAllTerms(columnName: string) {
-    setShowAllTerms((previousValues) => ({
-      ...previousValues,
-      [columnName]: !previousValues[columnName],
-    }));
-  }
-
-  function handleShowAllGroups() {
-    setShowAllGroups((previousValue) => !previousValue);
-  }
-
   const completedSummary =
     job?.state === JOB_STATE_SUCCEEDED && job.result !== null ? job.result : null;
   const formalTermsSummary =
@@ -500,8 +603,6 @@ export function DataAnalysisPanel({
           {formalTermsSummary !== null && (
             <FormalTermsResults
               summary={formalTermsSummary}
-              showAllTerms={showAllTerms}
-              onShowAllTerms={handleShowAllTerms}
               onDetailOpened={handleDetailOpened}
               onChangeColumns={focusColumnSelection}
             />
@@ -509,8 +610,6 @@ export function DataAnalysisPanel({
           {groupDataSummary !== null && (
             <GroupDataResults
               summary={groupDataSummary}
-              showAllGroups={showAllGroups}
-              onShowAllGroups={handleShowAllGroups}
               onDetailOpened={handleDetailOpened}
               onChangeColumns={focusColumnSelection}
             />
@@ -552,16 +651,12 @@ export function DataAnalysisPanel({
 
 interface FormalTermsResultsProps {
   summary: FormalTermsSummary;
-  showAllTerms: Record<string, boolean>;
-  onShowAllTerms: (columnName: string) => void;
   onDetailOpened: (detail: SelectedDetail) => void;
   onChangeColumns: () => void;
 }
 
 export function FormalTermsResults({
   summary,
-  showAllTerms,
-  onShowAllTerms,
   onDetailOpened,
   onChangeColumns,
 }: FormalTermsResultsProps) {
@@ -585,8 +680,6 @@ export function FormalTermsResults({
           column={column}
           columnIndex={columnIndex}
           inputRows={summary.input_rows}
-          showAllTerms={showAllTerms[column.name] ?? false}
-          onShowAllTerms={() => onShowAllTerms(column.name)}
           onDetailOpened={onDetailOpened}
           onChangeColumns={onChangeColumns}
         />
@@ -599,8 +692,6 @@ interface FormalColumnResultsProps {
   column: FormalColumnTerms;
   columnIndex: number;
   inputRows: number;
-  showAllTerms: boolean;
-  onShowAllTerms: () => void;
   onDetailOpened: (detail: SelectedDetail) => void;
   onChangeColumns: () => void;
 }
@@ -609,27 +700,22 @@ function FormalColumnResults({
   column,
   columnIndex,
   inputRows,
-  showAllTerms,
-  onShowAllTerms,
   onDetailOpened,
   onChangeColumns,
 }: FormalColumnResultsProps) {
-  const displayedTerms = showAllTerms
-    ? column.terms
-    : column.terms.slice(0, TERMS_SHOWN_BY_DEFAULT);
 
-  function openTermDetail(termIndex: number) {
-    const term = column.terms[termIndex];
+  function openTermDetail(sourceIndex: number) {
+    const term = column.terms[sourceIndex];
     if (term === undefined) {
       return;
     }
-    const detail = detailTargetForTerm(columnIndex, termIndex, term.value, term.count);
+    const detail = detailTargetForTerm(columnIndex, sourceIndex, term.value, term.count);
     onDetailOpened(detail);
   }
 
-  function openFormatDetail(patternIndex: number, pattern: DataFormatPattern) {
+  function openFormatDetail(sourceIndex: number, pattern: DataFormatPattern) {
     onDetailOpened({
-      target: { kind: "format", columnIndex, itemIndex: patternIndex },
+      target: { kind: "format", columnIndex, itemIndex: sourceIndex },
       title: "Input Rows for a Structural Format",
       description: `the format ${JSON.stringify(pattern.pattern)}`,
       count: pattern.occurrence_count,
@@ -652,53 +738,24 @@ function FormalColumnResults({
           </button>
         </div>
       ) : (
-        <div
-          className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
-          role="region"
-          aria-label={`Terms in ${column.name}. Scroll to view additional columns.`}
-          tabIndex={0}
-        >
-          <table className={`${summaryTableClasses} min-w-full`}>
-            <thead>
-              <tr>
-                <th className={dataAnalysisActionHeaderClasses} scope="col">
-                  Input Row details
-                </th>
-                <th scope="col">Term</th>
-                <th scope="col">Input Rows</th>
-                <th scope="col">Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedTerms.map((term, termIndex) => (
-                <tr key={termIndex}>
-                  <td className={dataAnalysisActionCellClasses}>
-                    <button
-                      type="button"
-                      className={secondaryButtonClasses}
-                      aria-haspopup="dialog"
-                      aria-label={`View Input Rows for the term ${JSON.stringify(formatTerm(term.value))}`}
-                      onClick={() => openTermDetail(termIndex)}
-                    >
-                      View rows
-                    </button>
-                  </td>
-                  <th scope="row">
-                    <span className="[overflow-wrap:anywhere]">{formatTerm(term.value)}</span>
-                  </th>
-                  <td>{term.count.toLocaleString()}</td>
-                  <td>{formatShare(term.share)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {column.terms.length > TERMS_SHOWN_BY_DEFAULT && (
-        <button type="button" className={secondaryButtonClasses} onClick={onShowAllTerms}>
-          {showAllTerms ? "Show the most common terms only" : "Show all terms"}
-        </button>
+        <AnalysisSummaryTable
+          ariaLabel={`Terms in ${column.name}. Scroll to view additional columns or rows.`}
+          rows={column.terms}
+          columns={termSummaryColumns}
+          previewLimit={10}
+          previewLabel="terms"
+          renderAction={(term, sourceIndex) => (
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              aria-haspopup="dialog"
+              aria-label={`View Input Rows for the term ${JSON.stringify(formatTerm(term.value))}`}
+              onClick={() => openTermDetail(sourceIndex)}
+            >
+              View rows
+            </button>
+          )}
+        />
       )}
 
       <h5 className="text-sm font-semibold text-text-secondary">Structural Format Patterns</h5>
@@ -710,49 +767,24 @@ function FormalColumnResults({
           </button>
         </div>
       ) : (
-        <div
-          className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
-          role="region"
-          aria-label={`Structural formats in ${column.name}. Scroll to view additional columns.`}
-          tabIndex={0}
-        >
-          <table className={`${summaryTableClasses} min-w-full`}>
-            <thead>
-              <tr>
-                <th className={dataAnalysisActionHeaderClasses} scope="col">
-                  Input Row details
-                </th>
-                <th scope="col">Format</th>
-                <th scope="col">Occurrences</th>
-                <th scope="col">Distinct terms</th>
-                <th scope="col">Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {column.format_patterns.map((pattern, patternIndex) => (
-                <tr key={patternIndex}>
-                  <td className={dataAnalysisActionCellClasses}>
-                    <button
-                      type="button"
-                      className={secondaryButtonClasses}
-                      aria-haspopup="dialog"
-                      aria-label={`View Input Rows for the format ${JSON.stringify(pattern.pattern)}`}
-                      onClick={() => openFormatDetail(patternIndex, pattern)}
-                    >
-                      View rows
-                    </button>
-                  </td>
-                  <th scope="row">
-                    <span className="[overflow-wrap:anywhere]">{pattern.pattern}</span>
-                  </th>
-                  <td>{pattern.occurrence_count.toLocaleString()}</td>
-                  <td>{pattern.distinct_term_count.toLocaleString()}</td>
-                  <td>{formatShare(pattern.share)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <AnalysisSummaryTable
+          ariaLabel={`Structural formats in ${column.name}. Scroll to view additional columns or rows.`}
+          rows={column.format_patterns}
+          columns={formatPatternSummaryColumns}
+          previewLimit={null}
+          previewLabel="format patterns"
+          renderAction={(pattern, sourceIndex) => (
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              aria-haspopup="dialog"
+              aria-label={`View Input Rows for the format ${JSON.stringify(pattern.pattern)}`}
+              onClick={() => openFormatDetail(sourceIndex, pattern)}
+            >
+              View rows
+            </button>
+          )}
+        />
       )}
     </section>
   );
@@ -760,26 +792,23 @@ function FormalColumnResults({
 
 interface GroupDataResultsProps {
   summary: GroupDataSummary;
-  showAllGroups: boolean;
-  onShowAllGroups: () => void;
   onDetailOpened: (detail: SelectedDetail) => void;
   onChangeColumns: () => void;
 }
 
 export function GroupDataResults({
   summary,
-  showAllGroups,
-  onShowAllGroups,
   onDetailOpened,
   onChangeColumns,
 }: GroupDataResultsProps) {
-  const displayedGroups = showAllGroups
-    ? summary.groups
-    : summary.groups.slice(0, GROUPS_SHOWN_BY_DEFAULT);
+  const summaryColumns = useMemo(
+    () => groupDataSummaryColumns(summary.selected_columns),
+    [summary.selected_columns],
+  );
 
-  function openGroupDetail(groupIndex: number, group: DataGroup) {
+  function openGroupDetail(sourceIndex: number, group: DataGroup) {
     onDetailOpened({
-      target: { kind: "group", itemIndex: groupIndex },
+      target: { kind: "group", itemIndex: sourceIndex },
       title: "Input Rows for a Group Data Key",
       description: `the group ${JSON.stringify(groupDescription(summary.selected_columns, group))}`,
       count: group.count,
@@ -802,6 +831,56 @@ export function GroupDataResults({
         </p>
       </div>
 
+      <section
+        className="grid min-w-0 gap-3 border-t border-border pt-4"
+        aria-labelledby="group-data-uniqueness-heading"
+      >
+        <div className="grid min-w-0 gap-2">
+          <h4 className="text-base font-semibold" id="group-data-uniqueness-heading">
+            Group Data Key uniqueness
+          </h4>
+          <p className={hintTextClasses}>
+            The singleton-key share uses distinct keys as its denominator. Missing Values follow
+            the selected Group Data rules. This summary does not identify a primary key.
+          </p>
+        </div>
+
+        <dl className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid min-w-0 gap-1">
+            <dt className="text-sm text-text-secondary">Distinct Group Data Keys</dt>
+            <dd className="m-0 break-words text-lg font-semibold text-text">
+              {summary.key_uniqueness.distinct_key_count.toLocaleString()}
+            </dd>
+          </div>
+          <div className="grid min-w-0 gap-1">
+            <dt className="text-sm text-text-secondary">Keys occurring once</dt>
+            <dd className="m-0 break-words text-lg font-semibold text-text">
+              {summary.key_uniqueness.singleton_key_count.toLocaleString()}
+            </dd>
+          </div>
+          <div className="grid min-w-0 gap-1">
+            <dt className="text-sm text-text-secondary">Keys occurring more than once</dt>
+            <dd className="m-0 break-words text-lg font-semibold text-text">
+              {summary.key_uniqueness.repeated_key_count.toLocaleString()}
+            </dd>
+          </div>
+          <div className="grid min-w-0 gap-1">
+            <dt className="text-sm text-text-secondary">Input Rows in repeated-key groups</dt>
+            <dd className="m-0 break-words text-lg font-semibold text-text">
+              {summary.key_uniqueness.input_rows_in_repeated_key_groups.toLocaleString()}
+            </dd>
+          </div>
+          <div className="grid min-w-0 gap-1">
+            <dt className="text-sm text-text-secondary">Singleton-key share of distinct keys</dt>
+            <dd className="m-0 break-words text-lg font-semibold text-text">
+              {formatShare(summary.key_uniqueness.singleton_key_share)} (
+              {summary.key_uniqueness.singleton_key_count.toLocaleString()} of{" "}
+              {summary.key_uniqueness.distinct_key_count.toLocaleString()} keys)
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       {summary.groups.length === 0 ? (
         <div className="grid justify-items-start gap-3">
           <p className={hintTextClasses}>No observed groups were found.</p>
@@ -810,57 +889,24 @@ export function GroupDataResults({
           </button>
         </div>
       ) : (
-        <div
-          className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
-          role="region"
-          aria-label="Group Data Summary table. Scroll to view additional columns."
-          tabIndex={0}
-        >
-          <table className={`${summaryTableClasses} min-w-full`}>
-            <thead>
-              <tr>
-                <th className={dataAnalysisActionHeaderClasses} scope="col">
-                  Input Row details
-                </th>
-                {summary.selected_columns.map((columnName, columnIndex) => (
-                  <th key={columnIndex} scope="col">{columnName}</th>
-                ))}
-                <th scope="col">Input Rows</th>
-                <th scope="col">Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedGroups.map((group, groupIndex) => (
-                <tr key={groupIndex}>
-                  <td className={dataAnalysisActionCellClasses}>
-                    <button
-                      type="button"
-                      className={secondaryButtonClasses}
-                      aria-haspopup="dialog"
-                      aria-label={`View Input Rows for the group ${groupDescription(summary.selected_columns, group)}`}
-                      onClick={() => openGroupDetail(groupIndex, group)}
-                    >
-                      View rows
-                    </button>
-                  </td>
-                  {group.values.map((value, valueIndex) => (
-                    <td key={valueIndex}>
-                      <span className="[overflow-wrap:anywhere]">{formatTerm(value)}</span>
-                    </td>
-                  ))}
-                  <td>{group.count.toLocaleString()}</td>
-                  <td>{formatShare(group.share)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {summary.groups.length > GROUPS_SHOWN_BY_DEFAULT && (
-        <button type="button" className={secondaryButtonClasses} onClick={onShowAllGroups}>
-          {showAllGroups ? "Show the most common groups only" : "Show all groups"}
-        </button>
+        <AnalysisSummaryTable
+          ariaLabel="Group Data Summary table. Scroll to view additional columns or rows."
+          rows={summary.groups}
+          columns={summaryColumns}
+          previewLimit={10}
+          previewLabel="groups"
+          renderAction={(group, sourceIndex) => (
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              aria-haspopup="dialog"
+              aria-label={`View Input Rows for the group ${groupDescription(summary.selected_columns, group)}`}
+              onClick={() => openGroupDetail(sourceIndex, group)}
+            >
+              View rows
+            </button>
+          )}
+        />
       )}
     </section>
   );

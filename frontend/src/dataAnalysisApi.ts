@@ -42,11 +42,20 @@ export interface DataGroup {
   share: number;
 }
 
+export interface GroupDataKeyUniqueness {
+  distinct_key_count: number;
+  singleton_key_count: number;
+  repeated_key_count: number;
+  input_rows_in_repeated_key_groups: number;
+  singleton_key_share: number;
+}
+
 export interface GroupDataSummary {
   kind: "group_data";
   input_rows: number;
   selected_columns: string[];
   groups: DataGroup[];
+  key_uniqueness: GroupDataKeyUniqueness;
 }
 
 export type DataAnalysisSummary = FormalTermsSummary | GroupDataSummary;

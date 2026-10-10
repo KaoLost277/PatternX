@@ -1,10 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent, KeyboardEvent, SyntheticEvent } from "react";
-import { describeRowColumnFilter } from "./rowFilters";
+import { useCallback, useId, useState } from "react";
+import { ColumnFilterEditor } from "./ColumnFilterEditor";
+import type { ColumnFilterEditorTarget } from "./ColumnFilterEditor";
+import { describeColumnValueFilter } from "./columnFilters";
 import type { RowColumnFilter, RowColumnFilters } from "./rowFilters";
 import {
-  hintTextClasses,
-  primaryButtonClasses,
   rowDetailsTableCellClasses,
   rowDetailsTableHeaderClasses,
   secondaryButtonClasses,
@@ -13,42 +12,12 @@ import {
   summaryTableFrameClasses,
 } from "./uiClasses";
 
-type TextFilterMatch = "contains" | "exact";
-
-type RowFilterDraft =
-  | { kind: "text"; match: TextFilterMatch; value: string }
-  | { kind: "missing" };
-
-type FilterEditorState =
-  | { kind: "closed" }
-  | {
-      kind: "editing";
-      columnName: string;
-      draft: RowFilterDraft;
-      left: number;
-      top: number;
-    };
-
 interface InputRowsTableProps {
   ariaLabel: string;
   columns: string[];
   rows: (string | null)[][];
   filters: RowColumnFilters;
   onFiltersChanged: (filters: RowColumnFilters) => void;
-}
-
-function draftForFilter(filter: RowColumnFilter | undefined): RowFilterDraft {
-  if (filter === undefined) {
-    return { kind: "text", match: "contains", value: "" };
-  }
-  if (filter.kind === "missing") {
-    return { kind: "missing" };
-  }
-  return {
-    kind: "text",
-    match: filter.kind,
-    value: filter.value,
-  };
 }
 
 function displayColumnName(columnName: string, columnIndex: number): string {
@@ -71,208 +40,43 @@ export function InputRowsTable({
   filters,
   onFiltersChanged,
 }: InputRowsTableProps) {
-  const [filterEditor, setFilterEditor] = useState<FilterEditorState>({ kind: "closed" });
+  const [filterEditorTarget, setFilterEditorTarget] =
+    useState<ColumnFilterEditorTarget<string> | null>(null);
   const filterPopoverId = useId();
-  const filterPopoverRef = useRef<HTMLDivElement>(null);
-  const filterTriggerRef = useRef<HTMLButtonElement>(null);
-  const filterMatchSelectRef = useRef<HTMLSelectElement>(null);
-  const filterValueInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (filterEditor.kind !== "editing") {
-      return;
-    }
-
-    function closeFilterEditor() {
-      const filterPopover = filterPopoverRef.current;
-      if (filterPopover?.matches(":popover-open")) {
-        filterPopover.hidePopover();
-      }
-      setFilterEditor({ kind: "closed" });
-    }
-
-    window.addEventListener("scroll", closeFilterEditor, true);
-    window.addEventListener("resize", closeFilterEditor);
-    return () => {
-      window.removeEventListener("scroll", closeFilterEditor, true);
-      window.removeEventListener("resize", closeFilterEditor);
-    };
-  }, [filterEditor.kind]);
+  const closeFilterEditor = useCallback(() => setFilterEditorTarget(null), []);
 
   function openFilterEditor(columnName: string, trigger: HTMLButtonElement) {
-    const currentPopover = filterPopoverRef.current;
-    if (
-      filterEditor.kind === "editing" &&
-      filterEditor.columnName === columnName &&
-      currentPopover?.matches(":popover-open")
-    ) {
-      currentPopover.hidePopover();
-      setFilterEditor({ kind: "closed" });
+    if (filterEditorTarget?.key === columnName) {
+      setFilterEditorTarget(null);
       return;
     }
 
-    if (currentPopover?.matches(":popover-open")) {
-      currentPopover.hidePopover();
-    }
-
-    const triggerBounds = trigger.getBoundingClientRect();
-    const popoverWidth = Math.min(320, window.innerWidth - 16);
-    const left = Math.max(
-      8,
-      Math.min(triggerBounds.left, window.innerWidth - popoverWidth - 8),
-    );
-    const belowTrigger = triggerBounds.bottom + 8;
-    const top =
-      belowTrigger + 240 <= window.innerHeight - 8
-        ? belowTrigger
-        : Math.max(8, triggerBounds.top - 240);
-
-    filterTriggerRef.current = trigger;
-    setFilterEditor({
-      kind: "editing",
-      columnName,
-      draft: draftForFilter(filterForColumn(filters, columnName)),
-      left,
-      top,
-    });
-    window.requestAnimationFrame(() => {
-      const filterPopover = filterPopoverRef.current;
-      if (filterPopover !== null && !filterPopover.matches(":popover-open")) {
-        filterPopover.showPopover();
-      }
-      if (filterPopoverRef.current?.matches(":popover-open")) {
-        const valueInput = filterValueInputRef.current;
-        if (valueInput !== null) {
-          valueInput.focus();
-        } else {
-          filterMatchSelectRef.current?.focus();
-        }
-      }
+    const columnIndex = columns.indexOf(columnName);
+    setFilterEditorTarget({
+      key: columnName,
+      label: displayColumnName(columnName, columnIndex),
+      trigger,
+      filter: filterForColumn(filters, columnName),
+      allowsMissing: true,
     });
   }
 
-  function closeFilterEditor() {
-    const filterPopover = filterPopoverRef.current;
-    if (filterPopover?.matches(":popover-open")) {
-      filterPopover.hidePopover();
-    }
-    setFilterEditor({ kind: "closed" });
+  function handleFilterApplied(columnName: string, filter: RowColumnFilter) {
+    onFiltersChanged({ ...filters, [columnName]: filter });
   }
 
-  function handleFilterPopoverToggled(event: SyntheticEvent<HTMLDivElement>) {
-    const toggleEvent = event.nativeEvent;
-    if (
-      typeof ToggleEvent !== "undefined" &&
-      toggleEvent instanceof ToggleEvent &&
-      toggleEvent.newState === "closed"
-    ) {
-      setFilterEditor({ kind: "closed" });
-    }
-  }
-
-  function handleFilterMatchChanged(event: ChangeEvent<HTMLSelectElement>) {
-    const nextMatch = event.currentTarget.value;
-    setFilterEditor((previousEditor) => {
-      if (previousEditor.kind !== "editing") {
-        return previousEditor;
-      }
-      if (nextMatch === "missing") {
-        return { ...previousEditor, draft: { kind: "missing" } };
-      }
-
-      const match: TextFilterMatch = nextMatch === "exact" ? "exact" : "contains";
-      const value =
-        previousEditor.draft.kind === "text" ? previousEditor.draft.value : "";
-      return {
-        ...previousEditor,
-        draft: { kind: "text", match, value },
-      };
-    });
-  }
-
-  function handleFilterValueChanged(event: ChangeEvent<HTMLInputElement>) {
-    const value = event.currentTarget.value;
-    setFilterEditor((previousEditor) => {
-      if (previousEditor.kind !== "editing" || previousEditor.draft.kind !== "text") {
-        return previousEditor;
-      }
-      return {
-        ...previousEditor,
-        draft: { ...previousEditor.draft, value },
-      };
-    });
-  }
-
-  function handleFilterApplied(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (filterEditor.kind !== "editing") {
-      return;
-    }
-
-    let nextFilter: RowColumnFilter;
-    if (filterEditor.draft.kind === "missing") {
-      nextFilter = { kind: "missing" };
-    } else {
-      if (filterEditor.draft.value.length === 0) {
-        return;
-      }
-      nextFilter = {
-        kind: filterEditor.draft.match,
-        value: filterEditor.draft.value,
-      };
-    }
-
-    onFiltersChanged({ ...filters, [filterEditor.columnName]: nextFilter });
-    closeFilterEditor();
-  }
-
-  function handleColumnFilterCleared() {
-    if (filterEditor.kind !== "editing") {
-      return;
-    }
-
+  function handleColumnFilterCleared(columnName: string) {
     const nextFilters = Object.fromEntries(
-      Object.entries(filters).filter(([columnName]) => columnName !== filterEditor.columnName),
+      Object.entries(filters).filter(([activeColumnName]) => activeColumnName !== columnName),
     );
     onFiltersChanged(nextFilters);
-    closeFilterEditor();
   }
 
   function handleAllFiltersCleared() {
     onFiltersChanged({});
   }
 
-  function handleFilterEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
-      filterTriggerRef.current?.focus();
-    }
-  }
-
   const activeFilters = Object.entries(filters);
-  const filterEditorColumnIndex =
-    filterEditor.kind === "editing" ? columns.indexOf(filterEditor.columnName) : -1;
-  let filterEditorColumnName = "column";
-  let filterMatch = "contains";
-  let filterValue = "";
-  let filterValueInputHidden = false;
-  if (filterEditor.kind === "editing") {
-    if (filterEditorColumnIndex >= 0) {
-      filterEditorColumnName = displayColumnName(
-        filterEditor.columnName,
-        filterEditorColumnIndex,
-      );
-    } else {
-      filterEditorColumnName = filterEditor.columnName || "Unnamed column";
-    }
-
-    if (filterEditor.draft.kind === "missing") {
-      filterMatch = "missing";
-      filterValueInputHidden = true;
-    } else {
-      filterMatch = filterEditor.draft.match;
-      filterValue = filterEditor.draft.value;
-    }
-  }
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -306,14 +110,14 @@ export function InputRowsTable({
                   <button
                     type="button"
                     className="min-h-9 min-w-0 break-words rounded-sm px-1 text-left hover:text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-                    aria-label={`Edit filter for ${displayedColumnName}: ${describeRowColumnFilter(filter)}`}
+                    aria-label={`Edit filter for ${displayedColumnName}: ${describeColumnValueFilter(filter)}`}
                     aria-controls={filterPopoverId}
                     aria-haspopup="dialog"
                     onClick={(event) =>
                       openFilterEditor(columnName, event.currentTarget)
                     }
                   >
-                    {displayedColumnName}: {describeRowColumnFilter(filter)}
+                    {displayedColumnName}: {describeColumnValueFilter(filter)}
                   </button>
                   <button
                     type="button"
@@ -359,9 +163,6 @@ export function InputRowsTable({
               {columns.map((columnName, columnIndex) => {
                 const displayedColumnName = displayColumnName(columnName, columnIndex);
                 const columnFilterActive = filterForColumn(filters, columnName) !== undefined;
-                const editorOpenForColumn =
-                  filterEditor.kind === "editing" &&
-                  filterEditor.columnName === columnName;
 
                 return (
                   <th
@@ -375,7 +176,7 @@ export function InputRowsTable({
                       aria-label={`Filter ${displayedColumnName}`}
                       aria-controls={filterPopoverId}
                       aria-haspopup="dialog"
-                      aria-expanded={editorOpenForColumn}
+                      aria-expanded={filterEditorTarget?.key === columnName}
                       aria-pressed={columnFilterActive}
                       onClick={(event) =>
                         openFilterEditor(columnName, event.currentTarget)
@@ -419,79 +220,14 @@ export function InputRowsTable({
         </table>
       </div>
 
-      <div
-        ref={filterPopoverRef}
-        className={`fixed inset-auto z-20 w-[min(20rem,calc(100vw-1rem))] gap-3 rounded-panel border border-border bg-surface p-4 text-text shadow-dialog ${filterEditor.kind === "editing" ? "grid" : "hidden"}`}
-        style={
-          filterEditor.kind === "editing"
-            ? { left: `${filterEditor.left}px`, top: `${filterEditor.top}px` }
-            : undefined
-        }
-        popover="auto"
-        role="dialog"
-        aria-labelledby={`${filterPopoverId}-title`}
-        onToggle={handleFilterPopoverToggled}
-        onKeyDown={handleFilterEditorKeyDown}
-      >
-        <div className="grid min-w-0 gap-2">
-          <h2 className="text-base font-semibold" id={`${filterPopoverId}-title`}>
-            Filter {filterEditorColumnName}
-          </h2>
-          <label className="grid min-w-0 gap-1 text-sm font-medium text-text-secondary">
-            <span>Match type</span>
-            <select
-              ref={filterMatchSelectRef}
-              className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-              value={filterMatch}
-              aria-label={`Match type for ${filterEditorColumnName}`}
-              onChange={handleFilterMatchChanged}
-            >
-              <option value="contains">Contains</option>
-              <option value="exact">Exactly matches</option>
-              <option value="missing">Missing Value</option>
-            </select>
-          </label>
-          {!filterValueInputHidden && (
-            <label className="grid min-w-0 gap-1 text-sm font-medium text-text-secondary">
-              <span>Value</span>
-              <input
-                ref={filterValueInputRef}
-                type="search"
-                value={filterValue}
-                className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-                aria-label={`Value for ${filterEditorColumnName} filter`}
-                onChange={handleFilterValueChanged}
-              />
-            </label>
-          )}
-          <p className={hintTextClasses}>
-            Contains ignores letter case. Exact matches preserve case and spacing. Missing Value
-            uses the configured rules.
-          </p>
-        </div>
-        <form className="flex flex-wrap gap-2" onSubmit={handleFilterApplied}>
-          <button
-            type="submit"
-            className={primaryButtonClasses}
-            disabled={
-              filterEditor.kind !== "editing" ||
-              (filterEditor.draft.kind === "text" && filterEditor.draft.value.length === 0)
-            }
-          >
-            Apply filter
-          </button>
-          {filterEditor.kind === "editing" &&
-            filterForColumn(filters, filterEditor.columnName) !== undefined && (
-            <button
-              type="button"
-              className={secondaryButtonClasses}
-              onClick={handleColumnFilterCleared}
-            >
-              Clear this filter
-            </button>
-          )}
-        </form>
-      </div>
+      <ColumnFilterEditor
+        key={filterEditorTarget === null ? "closed" : `editing:${filterEditorTarget.key}`}
+        popoverId={filterPopoverId}
+        target={filterEditorTarget}
+        onApply={handleFilterApplied}
+        onClear={handleColumnFilterCleared}
+        onClose={closeFilterEditor}
+      />
     </div>
   );
 }

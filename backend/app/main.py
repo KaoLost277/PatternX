@@ -741,6 +741,15 @@ def group_data_summary_response(summary: GroupDataSummary) -> dict[str, object]:
         "kind": GROUP_DATA_KIND,
         "input_rows": summary.input_rows,
         "selected_columns": list(summary.selected_columns),
+        "key_uniqueness": {
+            "distinct_key_count": summary.key_uniqueness.distinct_key_count,
+            "singleton_key_count": summary.key_uniqueness.singleton_key_count,
+            "repeated_key_count": summary.key_uniqueness.repeated_key_count,
+            "input_rows_in_repeated_key_groups": (
+                summary.key_uniqueness.input_rows_in_repeated_key_groups
+            ),
+            "singleton_key_share": summary.key_uniqueness.singleton_key_share,
+        },
         "groups": [
             {
                 "values": list(group.values),

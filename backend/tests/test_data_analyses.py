@@ -81,6 +81,7 @@ def test_formal_terms_report_exact_terms_repeated_formats_and_missing_values(tmp
     assert status["progress"] == {"items_done": 8, "items_total": 8}
     result = status["result"]
     assert result["kind"] == "formal_terms"
+    assert "key_uniqueness" not in result
     assert result["input_rows"] == 4
     assert result["selected_columns"] == ["Code", "Approval_Status"]
     code_column = result["columns"][0]
@@ -168,16 +169,19 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
     result = status["result"]
     assert result["kind"] == "group_data"
     assert result["input_rows"] == 5
-    groups = result["groups"]
-    assert len(groups) == 3
-    assert {
-        (tuple(group["values"]), group["count"])
-        for group in groups
-    } == {
-        (("IT", "Approved"), 2),
-        (("Finance", None), 2),
-        (("IT", "Pending"), 1),
+    assert result["key_uniqueness"] == {
+        "distinct_key_count": 3,
+        "singleton_key_count": 1,
+        "repeated_key_count": 2,
+        "input_rows_in_repeated_key_groups": 4,
+        "singleton_key_share": 1 / 3,
     }
+    groups = result["groups"]
+    assert [(group["values"], group["count"]) for group in groups] == [
+        (["Finance", None], 2),
+        (["IT", "Approved"], 2),
+        (["IT", "Pending"], 1),
+    ]
     assert sum(group["count"] for group in groups) == 5
 
     repeated_group_index = next(
@@ -244,6 +248,49 @@ def test_group_data_reports_only_observed_exact_tuples_and_retains_each_input_ro
         ["record_id", "Department", "Approval_Status"],
         ["4", "Finance", "N/A"],
     ]
+
+
+def test_group_data_reports_all_singleton_keys_with_full_singleton_share(tmp_path):
+    client = make_test_client(tmp_path / "work")
+    input_rows = 1_001
+    values = "\n".join(f"value-{value_index}" for value_index in range(input_rows))
+
+    status = run_data_analysis(
+        client,
+        "group_data",
+        f"value\n{values}\n".encode(),
+        ["value"],
+    )
+
+    assert status["state"] == "succeeded"
+    assert len(status["result"]["groups"]) == input_rows
+    assert status["result"]["key_uniqueness"] == {
+        "distinct_key_count": input_rows,
+        "singleton_key_count": input_rows,
+        "repeated_key_count": 0,
+        "input_rows_in_repeated_key_groups": 0,
+        "singleton_key_share": 1.0,
+    }
+
+
+def test_group_data_reports_zero_singleton_share_when_one_key_repeats(tmp_path):
+    client = make_test_client(tmp_path / "work")
+
+    status = run_data_analysis(
+        client,
+        "group_data",
+        b"value\nsame\nsame\nsame\n",
+        ["value"],
+    )
+
+    assert status["state"] == "succeeded"
+    assert status["result"]["key_uniqueness"] == {
+        "distinct_key_count": 1,
+        "singleton_key_count": 0,
+        "repeated_key_count": 1,
+        "input_rows_in_repeated_key_groups": 3,
+        "singleton_key_share": 0.0,
+    }
 
 
 def test_analysis_column_exports_use_source_order_and_all_matching_rows(tmp_path):

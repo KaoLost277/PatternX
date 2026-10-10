@@ -68,10 +68,20 @@ class DataGroup:
 
 
 @dataclass(frozen=True)
+class GroupDataKeyUniqueness:
+    distinct_key_count: int
+    singleton_key_count: int
+    repeated_key_count: int
+    input_rows_in_repeated_key_groups: int
+    singleton_key_share: float
+
+
+@dataclass(frozen=True)
 class GroupDataSummary:
     input_rows: int
     selected_columns: tuple[str, ...]
     groups: list[DataGroup]
+    key_uniqueness: GroupDataKeyUniqueness
 
 
 DataAnalysisSummary = FormalTermsSummary | GroupDataSummary
@@ -306,6 +316,10 @@ def compute_group_data(
     cursor = connection.execute(query)
     groups: list[DataGroup] = []
     rows_counted = 0
+    distinct_key_count = 0
+    singleton_key_count = 0
+    repeated_key_count = 0
+    input_rows_in_repeated_key_groups = 0
 
     while True:
         raise_if_cancelled(cancellation_check)
@@ -318,12 +332,27 @@ def compute_group_data(
             count = int(result_row[-1])
             groups.append(DataGroup(values=values, count=count, share=count / input_rows))
             rows_counted += count
+            distinct_key_count += 1
+            if count == 1:
+                singleton_key_count += 1
+            elif count > 1:
+                repeated_key_count += 1
+                input_rows_in_repeated_key_groups += count
 
         if progress_reporter is not None:
             progress_reporter(rows_counted, input_rows)
+
+    key_uniqueness = GroupDataKeyUniqueness(
+        distinct_key_count=distinct_key_count,
+        singleton_key_count=singleton_key_count,
+        repeated_key_count=repeated_key_count,
+        input_rows_in_repeated_key_groups=input_rows_in_repeated_key_groups,
+        singleton_key_share=singleton_key_count / distinct_key_count,
+    )
 
     return GroupDataSummary(
         input_rows=input_rows,
         selected_columns=tuple(selected_columns),
         groups=groups,
+        key_uniqueness=key_uniqueness,
     )
