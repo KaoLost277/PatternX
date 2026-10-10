@@ -56,6 +56,33 @@ test("numeric sorting is numeric and preserves original order for ties", async (
   assert.deepEqual(sortRows(rows, null, compareByValue), rows);
 });
 
+test("source-indexed sorting keeps detail indices attached to their original rows", async () => {
+  const { sortRows, compareText } = await viteServer.ssrLoadModule(
+    "/src/tableSorting.ts",
+  );
+  const rows = [
+    { name: "Beta", value: "Beta" },
+    { name: "First Alpha", value: "Alpha" },
+    { name: "Second Alpha", value: "Alpha" },
+  ];
+  const indexedRows = rows.map((row, sourceIndex) => ({ row, sourceIndex }));
+
+  const sortedRows = sortRows(
+    indexedRows,
+    { key: "value", direction: "ascending" },
+    (_key, left, right) => compareText(left.row.value, right.row.value),
+  );
+
+  assert.deepEqual(
+    sortedRows.map(({ row, sourceIndex }) => ({ name: row.name, sourceIndex })),
+    [
+      { name: "First Alpha", sourceIndex: 1 },
+      { name: "Second Alpha", sourceIndex: 2 },
+      { name: "Beta", sourceIndex: 0 },
+    ],
+  );
+});
+
 test("pattern status sorts Missing before Present in ascending order", async () => {
   const { sortRows, comparePatternStatus } = await viteServer.ssrLoadModule(
     "/src/tableSorting.ts",

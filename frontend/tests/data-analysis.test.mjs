@@ -68,6 +68,15 @@ test("Group Data Summary identifies its selected columns and observed groups", a
   assert.match(markup, /Operations/);
   assert.match(markup, /Input Rows/);
   assert.match(markup, /Share/);
+  assert.match(markup, /aria-label="Sort by Department"/);
+  assert.match(markup, /aria-label="Sort by Approval_Status"/);
+  assert.match(markup, /aria-label="Sort by Input Rows"/);
+  assert.match(markup, /aria-label="Sort by Share"/);
+  assert.equal(
+    (markup.match(/<th class="sticky top-0 z-10 bg-surface-muted" scope="col"/g) ?? []).length,
+    4,
+  );
+  assert.equal((markup.match(/<thead>/g) ?? []).length, 1);
   assert.match(markup, /aria-haspopup="dialog"/);
   assert.match(
     markup,
@@ -114,6 +123,17 @@ test("Formal Terms Summary retains terms, structural formats, and row-detail act
   assert.match(markup, /EMP-&lt;4 digits&gt;/);
   assert.match(markup, /3/);
   assert.match(markup, /Distinct terms/);
+  assert.match(markup, /aria-label="Sort by Term"/);
+  assert.match(markup, /aria-label="Sort by Input Rows"/);
+  assert.match(markup, /aria-label="Sort by Share"/);
+  assert.match(markup, /aria-label="Sort by Format"/);
+  assert.match(markup, /aria-label="Sort by Occurrences"/);
+  assert.match(markup, /aria-label="Sort by Distinct terms"/);
+  assert.equal(
+    (markup.match(/<th class="sticky top-0 z-10 bg-surface-muted" scope="col"/g) ?? []).length,
+    7,
+  );
+  assert.equal((markup.match(/<thead>/g) ?? []).length, 2);
   assert.equal((markup.match(/aria-haspopup="dialog"/g) ?? []).length, 2);
   assert.match(markup, /aria-label="View Input Rows for the term &quot;EMP-0001&quot;"/);
   assert.match(markup, /aria-label="View Input Rows for the format &quot;EMP-&lt;4 digits&gt;&quot;"/);
