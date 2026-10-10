@@ -114,6 +114,8 @@ export const dataAnalysisActionHeaderClasses = [
   "shadow-[1px_0_0_var(--color-border)]",
 ].join(" ");
 
+export const dataAnalysisSortableHeaderClasses = "sticky top-0 z-10 bg-surface-muted";
+
 export const dataAnalysisActionCellClasses =
   "sticky left-0 z-10 min-w-28 bg-surface shadow-[1px_0_0_var(--color-border)]";
 

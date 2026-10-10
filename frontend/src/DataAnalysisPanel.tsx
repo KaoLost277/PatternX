@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   DataAnalysisRequestError,
@@ -14,26 +14,37 @@ import type {
   DataAnalysisRowsPage,
   DataFormatPattern,
   DataGroup,
+  DataTerm,
   FormalColumnTerms,
   FormalTermsSummary,
   GroupDataSummary,
 } from "./dataAnalysisApi";
 import { DataAnalysisRowsDialog } from "./DataAnalysisRowsDialog";
+import { SortableHeader } from "./SortableHeader";
 import type { RowColumnMode } from "./rowColumnMode";
 import type { RowColumnFilters } from "./rowFilters";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { formatShare } from "./displayFormat";
 import {
+  compareNumbers,
+  compareNullableText,
+  compareText,
+  cycleSort,
+  sortRows,
+} from "./tableSorting";
+import type { SortState } from "./tableSorting";
+import {
   analysisOptionClasses,
   dataAnalysisActionCellClasses,
   dataAnalysisActionHeaderClasses,
+  dataAnalysisSortableHeaderClasses,
   errorMessageClasses,
   hintTextClasses,
   primaryButtonClasses,
   secondaryButtonClasses,
   statusTextClasses,
-  summaryTableClasses,
   summaryTableFrameClasses,
+  separatedSummaryTableClasses,
 } from "./uiClasses";
 
 interface DataAnalysisPanelProps {
@@ -55,11 +66,19 @@ interface SelectedDetail {
   count: number;
 }
 
+interface SourceIndexedRow<Row> {
+  row: Row;
+  sourceIndex: number;
+}
+
 const JOB_STATE_RUNNING = "running";
 const JOB_STATE_SUCCEEDED = "succeeded";
 const TERMS_SHOWN_BY_DEFAULT = 10;
 const GROUPS_SHOWN_BY_DEFAULT = 10;
 const JOB_POLL_INTERVAL_MILLISECONDS = 500;
+type TermSortKey = "term" | "count" | "share";
+type FormatPatternSortKey = "format" | "occurrences" | "distinctTerms" | "share";
+type GroupDataSortKey = `value:${number}` | "count" | "share";
 
 function titleForAnalysis(analysisKind: DataAnalysisKind): string {
   return analysisKind === "formal_terms" ? "Formal Terms" : "Group Data";
@@ -77,12 +96,12 @@ function formatTerm(value: string | null): string {
 
 function detailTargetForTerm(
   columnIndex: number,
-  termIndex: number,
+  sourceIndex: number,
   termValue: string | null,
   count: number,
 ): SelectedDetail {
   return {
-    target: { kind: "term", columnIndex, itemIndex: termIndex },
+    target: { kind: "term", columnIndex, itemIndex: sourceIndex },
     title: "Input Rows for a Formal Term",
     description: `the term ${JSON.stringify(formatTerm(termValue))}`,
     count,
@@ -614,22 +633,71 @@ function FormalColumnResults({
   onDetailOpened,
   onChangeColumns,
 }: FormalColumnResultsProps) {
+  const [termSort, setTermSort] = useState<SortState<TermSortKey> | null>(null);
+  const [formatPatternSort, setFormatPatternSort] =
+    useState<SortState<FormatPatternSortKey> | null>(null);
+  const sortedTerms = useMemo(() => {
+    const termsToSort =
+      showAllTerms || termSort !== null
+        ? column.terms
+        : column.terms.slice(0, TERMS_SHOWN_BY_DEFAULT);
+    const indexedTerms: SourceIndexedRow<DataTerm>[] = termsToSort.map((row, sourceIndex) => ({
+      row,
+      sourceIndex,
+    }));
+    return sortRows(indexedTerms, termSort, (sortKey, left, right) => {
+      if (sortKey === "term") {
+        return compareNullableText(left.row.value, right.row.value);
+      }
+      if (sortKey === "count") {
+        return compareNumbers(left.row.count, right.row.count);
+      }
+      return compareNumbers(left.row.share, right.row.share);
+    });
+  }, [column.terms, showAllTerms, termSort]);
+  const sortedFormatPatterns = useMemo(() => {
+    const indexedFormatPatterns: SourceIndexedRow<DataFormatPattern>[] =
+      column.format_patterns.map((row, sourceIndex) => ({
+        row,
+        sourceIndex,
+      }));
+    return sortRows(indexedFormatPatterns, formatPatternSort, (sortKey, left, right) => {
+      if (sortKey === "format") {
+        return compareText(left.row.pattern, right.row.pattern);
+      }
+      if (sortKey === "occurrences") {
+        return compareNumbers(left.row.occurrence_count, right.row.occurrence_count);
+      }
+      if (sortKey === "distinctTerms") {
+        return compareNumbers(left.row.distinct_term_count, right.row.distinct_term_count);
+      }
+      return compareNumbers(left.row.share, right.row.share);
+    });
+  }, [column.format_patterns, formatPatternSort]);
   const displayedTerms = showAllTerms
-    ? column.terms
-    : column.terms.slice(0, TERMS_SHOWN_BY_DEFAULT);
+    ? sortedTerms
+    : sortedTerms.slice(0, TERMS_SHOWN_BY_DEFAULT);
 
-  function openTermDetail(termIndex: number) {
-    const term = column.terms[termIndex];
+  function handleTermSortChanged(sortKey: TermSortKey) {
+    setTermSort((currentSort) => cycleSort(currentSort, sortKey));
+  }
+
+  function handleFormatPatternSortChanged(sortKey: FormatPatternSortKey) {
+    setFormatPatternSort((currentSort) => cycleSort(currentSort, sortKey));
+  }
+
+  function openTermDetail(sourceIndex: number) {
+    const term = column.terms[sourceIndex];
     if (term === undefined) {
       return;
     }
-    const detail = detailTargetForTerm(columnIndex, termIndex, term.value, term.count);
+    const detail = detailTargetForTerm(columnIndex, sourceIndex, term.value, term.count);
     onDetailOpened(detail);
   }
 
-  function openFormatDetail(patternIndex: number, pattern: DataFormatPattern) {
+  function openFormatDetail(sourceIndex: number, pattern: DataFormatPattern) {
     onDetailOpened({
-      target: { kind: "format", columnIndex, itemIndex: patternIndex },
+      target: { kind: "format", columnIndex, itemIndex: sourceIndex },
       title: "Input Rows for a Structural Format",
       description: `the format ${JSON.stringify(pattern.pattern)}`,
       count: pattern.occurrence_count,
@@ -655,30 +723,48 @@ function FormalColumnResults({
         <div
           className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
           role="region"
-          aria-label={`Terms in ${column.name}. Scroll to view additional columns.`}
+          aria-label={`Terms in ${column.name}. Scroll to view additional columns or rows.`}
           tabIndex={0}
         >
-          <table className={`${summaryTableClasses} min-w-full`}>
+          <table className={separatedSummaryTableClasses}>
             <thead>
               <tr>
                 <th className={dataAnalysisActionHeaderClasses} scope="col">
                   Input Row details
                 </th>
-                <th scope="col">Term</th>
-                <th scope="col">Input Rows</th>
-                <th scope="col">Share</th>
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Term"
+                  sortKey="term"
+                  sortState={termSort}
+                  onSort={handleTermSortChanged}
+                />
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Input Rows"
+                  sortKey="count"
+                  sortState={termSort}
+                  onSort={handleTermSortChanged}
+                />
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Share"
+                  sortKey="share"
+                  sortState={termSort}
+                  onSort={handleTermSortChanged}
+                />
               </tr>
             </thead>
             <tbody>
-              {displayedTerms.map((term, termIndex) => (
-                <tr key={termIndex}>
+              {displayedTerms.map(({ row: term, sourceIndex }) => (
+                <tr key={sourceIndex}>
                   <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
                       className={secondaryButtonClasses}
                       aria-haspopup="dialog"
                       aria-label={`View Input Rows for the term ${JSON.stringify(formatTerm(term.value))}`}
-                      onClick={() => openTermDetail(termIndex)}
+                      onClick={() => openTermDetail(sourceIndex)}
                     >
                       View rows
                     </button>
@@ -697,7 +783,7 @@ function FormalColumnResults({
 
       {column.terms.length > TERMS_SHOWN_BY_DEFAULT && (
         <button type="button" className={secondaryButtonClasses} onClick={onShowAllTerms}>
-          {showAllTerms ? "Show the most common terms only" : "Show all terms"}
+          {showAllTerms ? "Show first 10 terms" : "Show all terms"}
         </button>
       )}
 
@@ -713,31 +799,55 @@ function FormalColumnResults({
         <div
           className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
           role="region"
-          aria-label={`Structural formats in ${column.name}. Scroll to view additional columns.`}
+          aria-label={`Structural formats in ${column.name}. Scroll to view additional columns or rows.`}
           tabIndex={0}
         >
-          <table className={`${summaryTableClasses} min-w-full`}>
+          <table className={separatedSummaryTableClasses}>
             <thead>
               <tr>
                 <th className={dataAnalysisActionHeaderClasses} scope="col">
                   Input Row details
                 </th>
-                <th scope="col">Format</th>
-                <th scope="col">Occurrences</th>
-                <th scope="col">Distinct terms</th>
-                <th scope="col">Share</th>
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Format"
+                  sortKey="format"
+                  sortState={formatPatternSort}
+                  onSort={handleFormatPatternSortChanged}
+                />
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Occurrences"
+                  sortKey="occurrences"
+                  sortState={formatPatternSort}
+                  onSort={handleFormatPatternSortChanged}
+                />
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Distinct terms"
+                  sortKey="distinctTerms"
+                  sortState={formatPatternSort}
+                  onSort={handleFormatPatternSortChanged}
+                />
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Share"
+                  sortKey="share"
+                  sortState={formatPatternSort}
+                  onSort={handleFormatPatternSortChanged}
+                />
               </tr>
             </thead>
             <tbody>
-              {column.format_patterns.map((pattern, patternIndex) => (
-                <tr key={patternIndex}>
+              {sortedFormatPatterns.map(({ row: pattern, sourceIndex }) => (
+                <tr key={sourceIndex}>
                   <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
                       className={secondaryButtonClasses}
                       aria-haspopup="dialog"
                       aria-label={`View Input Rows for the format ${JSON.stringify(pattern.pattern)}`}
-                      onClick={() => openFormatDetail(patternIndex, pattern)}
+                      onClick={() => openFormatDetail(sourceIndex, pattern)}
                     >
                       View rows
                     </button>
@@ -773,13 +883,41 @@ export function GroupDataResults({
   onDetailOpened,
   onChangeColumns,
 }: GroupDataResultsProps) {
-  const displayedGroups = showAllGroups
-    ? summary.groups
-    : summary.groups.slice(0, GROUPS_SHOWN_BY_DEFAULT);
+  const [groupSort, setGroupSort] = useState<SortState<GroupDataSortKey> | null>(null);
+  const sortedGroups = useMemo(() => {
+    const groupsToSort =
+      showAllGroups || groupSort !== null
+        ? summary.groups
+        : summary.groups.slice(0, GROUPS_SHOWN_BY_DEFAULT);
+    const indexedGroups: SourceIndexedRow<DataGroup>[] = groupsToSort.map(
+      (row, sourceIndex) => ({ row, sourceIndex }),
+    );
+    return sortRows(indexedGroups, groupSort, (sortKey, left, right) => {
+      if (sortKey === "count") {
+        return compareNumbers(left.row.count, right.row.count);
+      }
+      if (sortKey === "share") {
+        return compareNumbers(left.row.share, right.row.share);
+      }
 
-  function openGroupDetail(groupIndex: number, group: DataGroup) {
+      const columnIndex = Number(sortKey.slice("value:".length));
+      return compareNullableText(
+        left.row.values[columnIndex] ?? null,
+        right.row.values[columnIndex] ?? null,
+      );
+    });
+  }, [groupSort, showAllGroups, summary.groups]);
+  const displayedGroups = showAllGroups
+    ? sortedGroups
+    : sortedGroups.slice(0, GROUPS_SHOWN_BY_DEFAULT);
+
+  function handleGroupSortChanged(sortKey: GroupDataSortKey) {
+    setGroupSort((currentSort) => cycleSort(currentSort, sortKey));
+  }
+
+  function openGroupDetail(sourceIndex: number, group: DataGroup) {
     onDetailOpened({
-      target: { kind: "group", itemIndex: groupIndex },
+      target: { kind: "group", itemIndex: sourceIndex },
       title: "Input Rows for a Group Data Key",
       description: `the group ${JSON.stringify(groupDescription(summary.selected_columns, group))}`,
       count: group.count,
@@ -813,32 +951,51 @@ export function GroupDataResults({
         <div
           className={`${summaryTableFrameClasses} max-h-[min(60vh,40rem)] overflow-auto overscroll-contain`}
           role="region"
-          aria-label="Group Data Summary table. Scroll to view additional columns."
+          aria-label="Group Data Summary table. Scroll to view additional columns or rows."
           tabIndex={0}
         >
-          <table className={`${summaryTableClasses} min-w-full`}>
+          <table className={separatedSummaryTableClasses}>
             <thead>
               <tr>
                 <th className={dataAnalysisActionHeaderClasses} scope="col">
                   Input Row details
                 </th>
                 {summary.selected_columns.map((columnName, columnIndex) => (
-                  <th key={columnIndex} scope="col">{columnName}</th>
+                  <SortableHeader
+                    key={columnIndex}
+                    className={dataAnalysisSortableHeaderClasses}
+                    label={columnName}
+                    sortKey={`value:${columnIndex}`}
+                    sortState={groupSort}
+                    onSort={handleGroupSortChanged}
+                  />
                 ))}
-                <th scope="col">Input Rows</th>
-                <th scope="col">Share</th>
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Input Rows"
+                  sortKey="count"
+                  sortState={groupSort}
+                  onSort={handleGroupSortChanged}
+                />
+                <SortableHeader
+                  className={dataAnalysisSortableHeaderClasses}
+                  label="Share"
+                  sortKey="share"
+                  sortState={groupSort}
+                  onSort={handleGroupSortChanged}
+                />
               </tr>
             </thead>
             <tbody>
-              {displayedGroups.map((group, groupIndex) => (
-                <tr key={groupIndex}>
+              {displayedGroups.map(({ row: group, sourceIndex }) => (
+                <tr key={sourceIndex}>
                   <td className={dataAnalysisActionCellClasses}>
                     <button
                       type="button"
                       className={secondaryButtonClasses}
                       aria-haspopup="dialog"
                       aria-label={`View Input Rows for the group ${groupDescription(summary.selected_columns, group)}`}
-                      onClick={() => openGroupDetail(groupIndex, group)}
+                      onClick={() => openGroupDetail(sourceIndex, group)}
                     >
                       View rows
                     </button>
@@ -859,7 +1016,7 @@ export function GroupDataResults({
 
       {summary.groups.length > GROUPS_SHOWN_BY_DEFAULT && (
         <button type="button" className={secondaryButtonClasses} onClick={onShowAllGroups}>
-          {showAllGroups ? "Show the most common groups only" : "Show all groups"}
+          {showAllGroups ? "Show first 10 groups" : "Show all groups"}
         </button>
       )}
     </section>
