@@ -1,4 +1,6 @@
 import type { RowColumnMode } from "./rowColumnMode";
+import { serializeRowColumnFilters } from "./rowFilters";
+import type { RowColumnFilters } from "./rowFilters";
 
 export interface PatternRowsPage {
   columns: string[];
@@ -19,12 +21,18 @@ export async function fetchPatternRowsPage(
   patternIndex: number,
   page: number,
   signal: AbortSignal,
+  filters: RowColumnFilters = {},
 ): Promise<PatternRowsPage> {
   const encodedJobId = encodeURIComponent(jobId);
-  const response = await fetch(
-    `/api/analysis-jobs/${encodedJobId}/patterns/${patternIndex}/rows?page=${page}`,
-    { signal },
-  );
+  const queryParameters = new URLSearchParams({ page: String(page) });
+  const serializedFilters = serializeRowColumnFilters(filters);
+  if (serializedFilters !== null) {
+    queryParameters.set("filters", serializedFilters);
+  }
+  const rowsUrl =
+    `/api/analysis-jobs/${encodedJobId}/patterns/${patternIndex}/rows?` +
+    queryParameters.toString();
+  const response = await fetch(rowsUrl, { signal });
   let responseBody: PatternRowsPage | ApiFailureResponse | null;
   try {
     responseBody = (await response.json()) as PatternRowsPage | ApiFailureResponse;
@@ -57,10 +65,21 @@ export async function downloadPatternRowsCsv(
   jobId: string,
   patternIndex: number,
   columnMode: RowColumnMode = "all",
+  filters: RowColumnFilters = {},
 ): Promise<void> {
   const encodedJobId = encodeURIComponent(jobId);
-  const columnModeQuery = columnMode === "analysis" ? "?column_mode=analysis" : "";
-  const exportUrl = `/api/analysis-jobs/${encodedJobId}/patterns/${patternIndex}/exports/rows.csv${columnModeQuery}`;
+  const queryParameters = new URLSearchParams();
+  if (columnMode === "analysis") {
+    queryParameters.set("column_mode", "analysis");
+  }
+  const serializedFilters = serializeRowColumnFilters(filters);
+  if (serializedFilters !== null) {
+    queryParameters.set("filters", serializedFilters);
+  }
+  const query = queryParameters.toString();
+  const exportPath =
+    `/api/analysis-jobs/${encodedJobId}/patterns/${patternIndex}/exports/rows.csv`;
+  const exportUrl = query.length > 0 ? `${exportPath}?${query}` : exportPath;
 
   let response: Response;
   try {

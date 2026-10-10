@@ -27,7 +27,7 @@ def test_pattern_rows_include_exact_matches_in_source_order_and_all_columns(tmp_
         ROWS_FIXTURE,
         {
             "analysis_columns": json.dumps(["email", "phone"]),
-            "missing_markers": json.dumps({"email": ["n/a"]}),
+            "missing_markers": json.dumps({"email": ["n/a"], "notes": ["fourth"]}),
         },
     )
     assert status["state"] == "succeeded"
@@ -53,6 +53,66 @@ def test_pattern_rows_include_exact_matches_in_source_order_and_all_columns(tmp_
         "page_size": 50,
         "total_rows": 3,
     }
+
+    missing_value_filter = test_client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/{target_pattern_index}/rows",
+        params={"filters": json.dumps({"notes": {"kind": "missing"}})},
+    )
+
+    assert missing_value_filter.status_code == 200
+    assert missing_value_filter.json()["rows"] == [
+        ["A1", "n/a", "555-0102", "fourth"]
+    ]
+    assert missing_value_filter.json()["total_rows"] == 1
+
+
+def test_pattern_row_filters_apply_before_paging_and_count_every_match(tmp_path):
+    test_client = make_test_client(tmp_path / "work")
+    row_count = 107
+    csv_lines = ["record_id,status,region"]
+    for row_index in range(row_count):
+        region = "North" if row_index % 2 == 0 else "South"
+        csv_lines.append(f"R{row_index:03},complete,{region}")
+    status = run_analysis_job(
+        test_client,
+        "data.csv",
+        "\n".join(csv_lines).encode("utf-8"),
+        {"analysis_columns": json.dumps(["status"])},
+    )
+    assert status["state"] == "succeeded"
+    filters = json.dumps({"region": {"kind": "contains", "value": "NORTH"}})
+
+    first_page = test_client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/0/rows",
+        params={"page": 1, "filters": filters},
+    )
+    second_page = test_client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/0/rows",
+        params={"page": 2, "filters": filters},
+    )
+    empty_page = test_client.get(
+        f"/api/analysis-jobs/{status['job_id']}/patterns/0/rows",
+        params={"page": 3, "filters": filters},
+    )
+
+    assert first_page.status_code == 200
+    assert [row[0] for row in first_page.json()["rows"]] == [
+        f"R{row_index:03}" for row_index in range(0, 100, 2)
+    ]
+    assert second_page.status_code == 200
+    assert [row[0] for row in second_page.json()["rows"]] == [
+        "R100",
+        "R102",
+        "R104",
+        "R106",
+    ]
+    assert empty_page.status_code == 200
+    assert empty_page.json()["rows"] == []
+    assert [
+        first_page.json()["total_rows"],
+        second_page.json()["total_rows"],
+        empty_page.json()["total_rows"],
+    ] == [54, 54, 54]
 
 
 def test_pattern_row_pages_cover_every_match_and_report_the_exact_total(tmp_path):
@@ -129,6 +189,10 @@ def test_pattern_rows_report_clear_errors_for_unknown_targets_and_invalid_pages(
     unknown_job = test_client.get("/api/analysis-jobs/missing/patterns/0/rows")
     unknown_pattern = test_client.get(f"/api/analysis-jobs/{job_id}/patterns/99/rows")
     invalid_page = test_client.get(f"/api/analysis-jobs/{job_id}/patterns/0/rows?page=0")
+    invalid_filter = test_client.get(
+        f"/api/analysis-jobs/{job_id}/patterns/0/rows",
+        params={"filters": '{"unknown":{"kind":"missing"}}'},
+    )
 
     assert unknown_job.status_code == 404
     assert "missing" in unknown_job.json()["detail"]
@@ -137,6 +201,8 @@ def test_pattern_rows_report_clear_errors_for_unknown_targets_and_invalid_pages(
     assert "99" in unknown_pattern.json()["detail"]
     assert invalid_page.status_code == 422
     assert "greater than or equal to 1" in str(invalid_page.json()["detail"])
+    assert invalid_filter.status_code == 422
+    assert "unknown" in invalid_filter.json()["detail"]
 
 
 def test_successful_job_retains_only_its_staged_database(tmp_path):

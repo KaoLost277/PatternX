@@ -58,6 +58,11 @@ from app.patterns import (
     resolve_analysis_columns,
 )
 from app.row_details import ColumnMode
+from app.row_filters import (
+    RowFilterColumnError,
+    RowFilterRequestError,
+    parse_row_filters,
+)
 from app.sqlite_storage import CSVFileError
 from app.workbooks import (
     CHOOSE_WORKSHEET_MESSAGE,
@@ -298,12 +303,16 @@ def create_application(
         job_id: str,
         pattern_index: int,
         page: int = Query(default=1, ge=1),
+        filters_json: str | None = Query(default=None, alias="filters"),
     ) -> dict[str, object]:
         job = find_job_or_raise(job_id)
         try:
-            return job.pattern_rows_page(pattern_index, page)
+            filters = parse_row_filters(filters_json)
+            return job.pattern_rows_page(pattern_index, page, filters)
         except (AnalysisNotSucceededError, PatternIndexNotFoundError) as error:
             raise pattern_rows_request_error(error, job_id, pattern_index) from error
+        except (RowFilterRequestError, RowFilterColumnError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @application.get(
         "/api/analysis-jobs/{job_id}/patterns/{pattern_index}/exports/rows.csv"
@@ -312,15 +321,20 @@ def create_application(
         job_id: str,
         pattern_index: int,
         column_mode: ColumnMode = Query(default="all"),
+        filters_json: str | None = Query(default=None, alias="filters"),
     ) -> Response:
         job = find_job_or_raise(job_id)
         try:
+            filters = parse_row_filters(filters_json)
             columns, matching_rows = job.open_pattern_rows_export(
                 pattern_index,
                 column_mode,
+                filters,
             )
         except (AnalysisNotSucceededError, PatternIndexNotFoundError) as error:
             raise pattern_rows_request_error(error, job_id, pattern_index) from error
+        except (RowFilterRequestError, RowFilterColumnError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
         export_name = f"pattern_rows_{pattern_index + 1}.csv"
         return StreamingResponse(
@@ -364,12 +378,16 @@ def create_application(
         item_index: int = Query(ge=0),
         column_index: int | None = Query(default=None, ge=0),
         page: int = Query(default=1, ge=1),
+        filters_json: str | None = Query(default=None, alias="filters"),
     ) -> dict[str, object]:
         job = find_data_analysis_job_or_raise(job_id)
         try:
-            return job.rows_page(target_kind, item_index, column_index, page)
+            filters = parse_row_filters(filters_json)
+            return job.rows_page(target_kind, item_index, column_index, page, filters)
         except (DataAnalysisNotSucceededError, DataAnalysisTargetNotFoundError) as error:
             raise data_analysis_rows_request_error(error, job_id) from error
+        except (RowFilterRequestError, RowFilterColumnError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @application.get("/api/data-analysis-jobs/{job_id}/exports/rows.csv")
     async def download_data_analysis_rows_export(
@@ -378,17 +396,22 @@ def create_application(
         item_index: int = Query(ge=0),
         column_index: int | None = Query(default=None, ge=0),
         column_mode: ColumnMode = Query(default="all"),
+        filters_json: str | None = Query(default=None, alias="filters"),
     ) -> Response:
         job = find_data_analysis_job_or_raise(job_id)
         try:
+            filters = parse_row_filters(filters_json)
             columns, matching_rows = job.open_rows_export(
                 target_kind,
                 item_index,
                 column_index,
                 column_mode,
+                filters,
             )
         except (DataAnalysisNotSucceededError, DataAnalysisTargetNotFoundError) as error:
             raise data_analysis_rows_request_error(error, job_id) from error
+        except (RowFilterRequestError, RowFilterColumnError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
         export_name = f"{job.analysis_kind}_{target_kind}_rows.csv"
         return StreamingResponse(

@@ -17,6 +17,7 @@ import {
   PatternRowsRequestError,
 } from "./patternRows";
 import type { PatternRowsPage } from "./patternRows";
+import type { RowColumnFilters } from "./rowFilters";
 import {
   compareNumbers,
   comparePatternStatus,
@@ -402,6 +403,7 @@ function App() {
   const [selectedPatternIndex, setSelectedPatternIndex] = useState<number | null>(null);
   const [selectedPatternPage, setSelectedPatternPage] = useState<number>(1);
   const [patternRowsPage, setPatternRowsPage] = useState<PatternRowsPage | null>(null);
+  const [patternRowFilters, setPatternRowFilters] = useState<RowColumnFilters>({});
   const [patternRowsColumnMode, setPatternRowsColumnMode] = useState<RowColumnMode>("all");
   const [patternRowsLoading, setPatternRowsLoading] = useState<boolean>(false);
   const [patternRowsError, setPatternRowsError] = useState<string | null>(null);
@@ -649,6 +651,7 @@ function App() {
     setSelectedPatternIndex(null);
     setSelectedPatternPage(1);
     setPatternRowsPage(null);
+    setPatternRowFilters({});
     setPatternRowsLoading(false);
     setPatternRowsError(null);
     setPatternRowsExportLoading(false);
@@ -961,6 +964,7 @@ function App() {
     setPatternRowsColumnMode("all");
     setSelectedPatternPage(1);
     setPatternRowsPage(null);
+    setPatternRowFilters({});
     setPatternRowsLoading(true);
     setPatternRowsError(null);
     setPatternRowsExportLoading(false);
@@ -978,6 +982,16 @@ function App() {
     setPatternRowsPage(null);
     setPatternRowsLoading(true);
     setPatternRowsError(null);
+  }
+
+  function handlePatternRowFiltersChanged(filters: RowColumnFilters) {
+    setPatternRowFilters(filters);
+    setSelectedPatternPage(1);
+    setPatternRowsPage(null);
+    setPatternRowsLoading(true);
+    setPatternRowsError(null);
+    setPatternRowsExportError(null);
+    setPatternRowsExportSuccess(null);
   }
 
   function handlePatternRowsRetry() {
@@ -999,7 +1013,12 @@ function App() {
     setPatternRowsExportError(null);
     setPatternRowsExportSuccess(null);
     try {
-      await downloadPatternRowsCsv(analysisJob.job_id, selectedPatternIndex, columnMode);
+      await downloadPatternRowsCsv(
+        analysisJob.job_id,
+        selectedPatternIndex,
+        columnMode,
+        patternRowFilters,
+      );
       setPatternRowsExportSuccess("CSV download started.");
     } catch (error: unknown) {
       setPatternRowsExportSuccess(null);
@@ -1094,6 +1113,7 @@ function App() {
       selectedPatternIndex,
       selectedPatternPage,
       controller.signal,
+      patternRowFilters,
     )
       .then((rowsPage) => {
         if (controller.signal.aborted) {
@@ -1123,6 +1143,7 @@ function App() {
     selectedPatternIndex,
     selectedPattern,
     selectedPatternPage,
+    patternRowFilters,
     patternRowsRetryNumber,
   ]);
 
@@ -2013,6 +2034,8 @@ function App() {
             analysisColumns={patternSummary.analysis_columns}
             columnMode={patternRowsColumnMode}
             onColumnModeChange={setPatternRowsColumnMode}
+            filters={patternRowFilters}
+            onFiltersChanged={handlePatternRowFiltersChanged}
             page={patternRowsPage}
             requestedPage={selectedPatternPage}
             loading={patternRowsDisplayLoading}

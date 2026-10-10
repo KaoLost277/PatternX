@@ -20,6 +20,7 @@ import type {
 } from "./dataAnalysisApi";
 import { DataAnalysisRowsDialog } from "./DataAnalysisRowsDialog";
 import type { RowColumnMode } from "./rowColumnMode";
+import type { RowColumnFilters } from "./rowFilters";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { formatShare } from "./displayFormat";
 import {
@@ -113,6 +114,7 @@ export function DataAnalysisPanel({
   const [detail, setDetail] = useState<SelectedDetail | null>(null);
   const [detailColumnMode, setDetailColumnMode] = useState<RowColumnMode>("all");
   const [detailPage, setDetailPage] = useState<DataAnalysisRowsPage | null>(null);
+  const [detailFilters, setDetailFilters] = useState<RowColumnFilters>({});
   const [detailPageNumber, setDetailPageNumber] = useState(1);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -190,6 +192,7 @@ export function DataAnalysisPanel({
       detailTarget,
       detailPageNumber,
       controller.signal,
+      detailFilters,
     )
       .then((page) => {
         if (!controller.signal.aborted) {
@@ -214,7 +217,7 @@ export function DataAnalysisPanel({
       });
 
     return () => controller.abort();
-  }, [job, detail, detailPageNumber, detailRetryNumber, onError]);
+  }, [job, detail, detailPageNumber, detailFilters, detailRetryNumber, onError]);
 
   function resetCurrentResult() {
     setJob(null);
@@ -224,6 +227,7 @@ export function DataAnalysisPanel({
     setStatusMessage(null);
     setDetail(null);
     setDetailPage(null);
+    setDetailFilters({});
     setShowAllTerms({});
     setShowAllGroups(false);
   }
@@ -278,6 +282,7 @@ export function DataAnalysisPanel({
     onAnalysisStartingChanged(analysisKind, true);
     setDetail(null);
     setDetailPage(null);
+    setDetailFilters({});
     try {
       const startedJob = await startDataAnalysisJob(
         selectedFile,
@@ -304,6 +309,7 @@ export function DataAnalysisPanel({
     setDetail(nextDetail);
     setDetailColumnMode("all");
     setDetailPage(null);
+    setDetailFilters({});
     setDetailPageNumber(1);
     setDetailLoading(true);
     setDetailError(null);
@@ -317,6 +323,17 @@ export function DataAnalysisPanel({
     setDetailPage(null);
     setDetailLoading(true);
     setDetailError(null);
+    onError(null);
+  }
+
+  function handleDetailFiltersChanged(filters: RowColumnFilters) {
+    setDetailFilters(filters);
+    setDetailPageNumber(1);
+    setDetailPage(null);
+    setDetailLoading(true);
+    setDetailError(null);
+    setExportError(null);
+    setExportSuccess(null);
     onError(null);
   }
 
@@ -343,6 +360,7 @@ export function DataAnalysisPanel({
         analysisKind,
         detail.target,
         columnMode,
+        detailFilters,
       );
       setExportSuccess("CSV download started.");
     } catch (error: unknown) {
@@ -360,6 +378,7 @@ export function DataAnalysisPanel({
   function handleDetailClosed() {
     setDetail(null);
     setDetailPage(null);
+    setDetailFilters({});
     setDetailColumnMode("all");
   }
 
@@ -512,6 +531,8 @@ export function DataAnalysisPanel({
           }
           columnMode={detailColumnMode}
           onColumnModeChange={setDetailColumnMode}
+          filters={detailFilters}
+          onFiltersChanged={handleDetailFiltersChanged}
           page={detailPage}
           requestedPage={detailPageNumber}
           loading={detailLoading}

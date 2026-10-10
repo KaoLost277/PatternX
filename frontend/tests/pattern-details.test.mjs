@@ -31,6 +31,8 @@ function patternDetailsProps(overrides = {}) {
     analysisColumns: [],
     columnMode: "all",
     onColumnModeChange: () => {},
+    filters: {},
+    onFiltersChanged: () => {},
     page: null,
     requestedPage: 1,
     loading: false,
@@ -57,6 +59,8 @@ test("the populated View rows panel contains a semantic table of every returned 
     analysisColumns: ["<script>source</script>"],
     columnMode: "all",
     onColumnModeChange: () => {},
+    filters: {},
+    onFiltersChanged: () => {},
     page: {
       columns: sourceColumns,
       rows: [
@@ -111,6 +115,52 @@ test("the populated View rows panel contains a semantic table of every returned 
   assert.match(markup, /Columns used in analysis/);
 });
 
+test("Input Row column headers expose active filters and editable filter chips", async () => {
+  const markup = await renderPatternDetails(
+    patternDetailsProps({
+      patternCount: 3,
+      filters: {
+        email: { kind: "contains", value: "ADA" },
+        notes: { kind: "missing" },
+      },
+      page: {
+        columns: ["email", "phone"],
+        rows: [["ada@example.com", "555-0100"]],
+        page: 1,
+        page_size: 50,
+        total_rows: 1,
+      },
+    }),
+  );
+
+  assert.match(markup, /1 of 3 Input Rows match the current filters\./);
+  assert.match(markup, /aria-label="Filter email"[^>]*aria-expanded="false" aria-pressed="true"/);
+  assert.match(markup, /aria-label="Edit filter for notes: Missing Value"/);
+  assert.match(markup, /notes: Missing Value/);
+  assert.match(markup, /Clear all filters/);
+  assert.match(markup, /aria-label="Match type for column"/);
+  assert.match(markup, /Apply filter/);
+});
+
+test("headers named after object properties start without an active filter", async () => {
+  const markup = await renderPatternDetails(
+    patternDetailsProps({
+      patternCount: 1,
+      page: {
+        columns: ["constructor", "__proto__"],
+        rows: [["value", "other"]],
+        page: 1,
+        page_size: 50,
+        total_rows: 1,
+      },
+    }),
+  );
+
+  assert.match(markup, /aria-label="Filter constructor"[^>]*aria-pressed="false"/);
+  assert.match(markup, /aria-label="Filter __proto__"[^>]*aria-pressed="false"/);
+  assert.doesNotMatch(markup, /column filter is active|column filters are active/);
+});
+
 test("pattern details show analysis columns in source order without the Identifier Column", async () => {
   const markup = await renderPatternDetails(
     patternDetailsProps({
@@ -131,7 +181,7 @@ test("pattern details show analysis columns in source order without the Identifi
   )?.[1];
 
   assert.ok(tableRegion);
-  assert.match(tableRegion, /<th[^>]*>email<\/th>[\s\S]*?<th[^>]*>phone<\/th>/);
+  assert.match(tableRegion, /aria-label="Filter email"[\s\S]*?aria-label="Filter phone"/);
   assert.match(tableRegion, /<td[^>]*><span[^>]*>ada@example\.com<\/span><\/td>/);
   assert.match(tableRegion, /<td[^>]*><span[^>]*>555-0100<\/span><\/td>/);
   assert.doesNotMatch(tableRegion, /record_id|A1|notes|row note/);
@@ -186,6 +236,7 @@ test("pattern row requests use the job and canonical pattern index with the sele
   const { fetchPatternRowsPage } = await viteServer.ssrLoadModule("/src/patternRows.ts");
   const previousFetch = globalThis.fetch;
   const requestSignal = new AbortController().signal;
+  const filters = { notes: { kind: "contains", value: "A&B" } };
   let requestedUrl = "";
   let requestedSignal;
   globalThis.fetch = async (url, options) => {
@@ -204,9 +255,15 @@ test("pattern row requests use the job and canonical pattern index with the sele
   };
 
   try {
-    const page = await fetchPatternRowsPage("job-123", 4, 2, requestSignal);
+    const page = await fetchPatternRowsPage("job-123", 4, 2, requestSignal, filters);
 
-    assert.equal(requestedUrl, "/api/analysis-jobs/job-123/patterns/4/rows?page=2");
+    const requestParameters = new URLSearchParams(requestedUrl.split("?")[1]);
+    assert.equal(
+      requestedUrl.split("?")[0],
+      "/api/analysis-jobs/job-123/patterns/4/rows",
+    );
+    assert.equal(requestParameters.get("page"), "2");
+    assert.equal(requestParameters.get("filters"), JSON.stringify(filters));
     assert.equal(requestedSignal, requestSignal);
     assert.equal(page.page, 2);
     assert.equal(page.total_rows, 51);
@@ -277,12 +334,12 @@ test("pattern CSV downloads request the canonical pattern and provide a practica
   };
 
   try {
-    await downloadPatternRowsCsv("job /id", 5);
+    const filters = { notes: { kind: "exact", value: "first & second" } };
+    await downloadPatternRowsCsv("job /id", 5, "all", filters);
 
-    assert.equal(
-      requestedUrl,
-      "/api/analysis-jobs/job%20%2Fid/patterns/5/exports/rows.csv",
-    );
+    const requestUrl = new URL(requestedUrl, "http://localhost");
+    assert.equal(requestUrl.pathname, "/api/analysis-jobs/job%20%2Fid/patterns/5/exports/rows.csv");
+    assert.equal(requestUrl.searchParams.get("filters"), JSON.stringify(filters));
     assert.equal(appendedLink, downloadLink);
     assert.equal(downloadLink.download, "pattern_rows_6.csv");
     assert.equal(downloadLink.clicked, true);
@@ -300,7 +357,7 @@ test("pattern CSV downloads request the canonical pattern and provide a practica
   }
 });
 
-test("pattern CSV exports request the analysis-column mode when selected", async () => {
+test("pattern CSV exports preserve column mode and row filters", async () => {
   const { downloadPatternRowsCsv } = await viteServer.ssrLoadModule("/src/patternRows.ts");
   const previousFetch = globalThis.fetch;
   let requestedUrl = "";
@@ -313,14 +370,15 @@ test("pattern CSV exports request the analysis-column mode when selected", async
   };
 
   try {
+    const filters = { notes: { kind: "missing" } };
     await assert.rejects(
-      downloadPatternRowsCsv("job-123", 4, "analysis"),
+      downloadPatternRowsCsv("job-123", 4, "analysis", filters),
       /Expected export failure for request inspection\./,
     );
-    assert.equal(
-      requestedUrl,
-      "/api/analysis-jobs/job-123/patterns/4/exports/rows.csv?column_mode=analysis",
-    );
+    const requestUrl = new URL(requestedUrl, "http://localhost");
+    assert.equal(requestUrl.pathname, "/api/analysis-jobs/job-123/patterns/4/exports/rows.csv");
+    assert.equal(requestUrl.searchParams.get("column_mode"), "analysis");
+    assert.equal(requestUrl.searchParams.get("filters"), JSON.stringify(filters));
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -389,7 +447,7 @@ test("pattern details offer an accessible full-row CSV export and show retryable
   assert.match(markup, /The CSV could not be downloaded\. Check the local API and retry\./);
 
   const loadingButton = loadingMarkup.match(
-    /<button[^>]*aria-label="Download all matching Input Rows as CSV"[^>]*>/,
+    /<button[^>]*aria-label="Preparing CSV download"[^>]*>/,
   )?.[0];
   assert.ok(loadingButton);
   assert.match(loadingButton, /disabled=""/);
