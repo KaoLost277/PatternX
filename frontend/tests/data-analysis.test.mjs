@@ -207,8 +207,17 @@ test("every data column in analysis summaries exposes a filter and a sort contro
 
       for (const [columnIndex, label] of expectedLabels.entries()) {
         const header = headerCells[columnIndex + 1][0];
-        assert.ok(header.includes(`aria-label="Sort by ${label}"`));
-        assert.ok(header.includes(`aria-label="Filter ${label}"`));
+        const sortButton = header.match(
+          /<button\b[^>]*aria-label="Sort by [^"]+"[^>]*>[\s\S]*?<\/button>/,
+        )?.[0];
+        const filterButton = header.match(
+          /<button\b[^>]*aria-label="Filter [^"]+"[^>]*>[\s\S]*?<\/button>/,
+        )?.[0];
+
+        assert.ok(sortButton?.includes(label));
+        assert.doesNotMatch(sortButton ?? "", /<svg/);
+        assert.ok(filterButton);
+        assert.notEqual(sortButton, filterButton);
       }
     }
   }

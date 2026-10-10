@@ -300,7 +300,7 @@ test("text sorting is locale-aware and places null values first in ascending ord
   );
 });
 
-test("sortable headers expose their current direction and an accessible button", async () => {
+test("sortable headers sort from the visible column label without a sort icon", async () => {
   const { SortableHeader } = await viteServer.ssrLoadModule(
     "/src/SortableHeader.tsx",
   );
@@ -314,6 +314,9 @@ test("sortable headers expose their current direction and an accessible button",
   );
 
   assert.match(markup, /<th[^>]*aria-sort="ascending"/);
-  assert.match(markup, /<button[^>]*aria-label="Sort by Input Rows"/);
-  assert.match(markup, /<span[^>]*>Input Rows<\/span>/);
+  assert.match(
+    markup,
+    /<button[^>]*aria-label="Sort by Input Rows"[^>]*><span[^>]*>Input Rows<\/span><\/button>/,
+  );
+  assert.doesNotMatch(markup, /<svg/);
 });
