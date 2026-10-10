@@ -53,8 +53,6 @@ test("Group Data Summary identifies its selected columns and observed groups", a
           { values: ["Operations", null], count: 1, share: 1 / 3 },
         ],
       },
-      showAllGroups: false,
-      onShowAllGroups: () => {},
       onDetailOpened: () => {},
       onChangeColumns: () => {},
     }),
@@ -73,7 +71,7 @@ test("Group Data Summary identifies its selected columns and observed groups", a
   assert.match(markup, /aria-label="Sort by Input Rows"/);
   assert.match(markup, /aria-label="Sort by Share"/);
   assert.equal(
-    (markup.match(/<th class="sticky top-0 z-10 bg-surface-muted" scope="col"/g) ?? []).length,
+    (markup.match(/<th class="sticky top-0 z-10 [^"]*" scope="col"/g) ?? []).length,
     4,
   );
   assert.equal((markup.match(/<thead>/g) ?? []).length, 1);
@@ -130,13 +128,90 @@ test("Formal Terms Summary retains terms, structural formats, and row-detail act
   assert.match(markup, /aria-label="Sort by Occurrences"/);
   assert.match(markup, /aria-label="Sort by Distinct terms"/);
   assert.equal(
-    (markup.match(/<th class="sticky top-0 z-10 bg-surface-muted" scope="col"/g) ?? []).length,
+    (markup.match(/<th class="sticky top-0 z-10 [^"]*" scope="col"/g) ?? []).length,
     7,
   );
   assert.equal((markup.match(/<thead>/g) ?? []).length, 2);
-  assert.equal((markup.match(/aria-haspopup="dialog"/g) ?? []).length, 2);
+  assert.equal((markup.match(/aria-haspopup="dialog"/g) ?? []).length, 9);
   assert.match(markup, /aria-label="View Input Rows for the term &quot;EMP-0001&quot;"/);
   assert.match(markup, /aria-label="View Input Rows for the format &quot;EMP-&lt;4 digits&gt;&quot;"/);
+});
+
+test("every data column in analysis summaries exposes a filter and a sort control", async () => {
+  const { FormalTermsResults, GroupDataResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const groupMarkup = renderToStaticMarkup(
+    React.createElement(GroupDataResults, {
+      summary: {
+        kind: "group_data",
+        input_rows: 2,
+        selected_columns: ["Department", "Status"],
+        groups: [
+          { values: ["Sales", "Open"], count: 1, share: 0.5 },
+          { values: ["Support", null], count: 1, share: 0.5 },
+        ],
+      },
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+  const termsMarkup = renderToStaticMarkup(
+    React.createElement(FormalTermsResults, {
+      summary: {
+        kind: "formal_terms",
+        input_rows: 2,
+        selected_columns: ["Employee_Code"],
+        columns: [
+          {
+            name: "Employee_Code",
+            terms: [{ value: "EMP-1", count: 1, share: 0.5 }],
+            format_patterns: [
+              {
+                pattern: "EMP-<1 digit>",
+                occurrence_count: 1,
+                distinct_term_count: 1,
+                share: 0.5,
+              },
+            ],
+          },
+        ],
+      },
+      showAllTerms: {},
+      onShowAllTerms: () => {},
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+
+  const summaryTables = [
+    [groupMarkup, ["Department", "Status", "Input Rows", "Share"]],
+    [
+      termsMarkup,
+      ["Term", "Input Rows", "Share"],
+      ["Format", "Occurrences", "Distinct terms", "Share"],
+    ],
+  ];
+
+  for (const [markup, ...expectedTableColumns] of summaryTables) {
+    const tableHeaders = [...markup.matchAll(/<thead>([\s\S]*?)<\/thead>/g)];
+    assert.equal(tableHeaders.length, expectedTableColumns.length);
+    for (const [tableIndex, tableHeader] of tableHeaders.entries()) {
+      const headerCells = [...tableHeader[1].matchAll(/<th\b[^>]*>[\s\S]*?<\/th>/g)];
+      const expectedLabels = expectedTableColumns[tableIndex];
+      assert.equal(headerCells.length, expectedLabels.length + 1);
+
+      const actionHeader = headerCells[0][0];
+      assert.match(actionHeader, /Input Row details/);
+      assert.doesNotMatch(actionHeader, /aria-label="(?:Filter|Sort by )/);
+
+      for (const [columnIndex, label] of expectedLabels.entries()) {
+        const header = headerCells[columnIndex + 1][0];
+        assert.ok(header.includes(`aria-label="Sort by ${label}"`));
+        assert.ok(header.includes(`aria-label="Filter ${label}"`));
+      }
+    }
+  }
 });
 
 test("Formal Terms and Group Data render hostile headers and values as inert text", async () => {
@@ -153,8 +228,6 @@ test("Formal Terms and Group Data render hostile headers and values as inert tex
         selected_columns: [hostileHeader],
         groups: [{ values: [hostileValue], count: 1, share: 1 }],
       },
-      showAllGroups: false,
-      onShowAllGroups: () => {},
       onDetailOpened: () => {},
       onChangeColumns: () => {},
     }),
