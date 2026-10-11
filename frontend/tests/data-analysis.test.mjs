@@ -143,6 +143,7 @@ test("Formal Terms Summary retains terms, structural formats, and row-detail act
   assert.match(markup, /aria-label="Sort by Format"/);
   assert.match(markup, /aria-label="Sort by Occurrences"/);
   assert.match(markup, /aria-label="Sort by Distinct terms"/);
+  assert.match(markup, /class="[^"]*\bisolate\b[^"]*overflow-auto/);
   assert.equal(
     (markup.match(/<th class="sticky top-0 z-10 [^"]*" scope="col"/g) ?? []).length,
     7,
