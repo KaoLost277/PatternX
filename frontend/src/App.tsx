@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { AnalysisModeTabs } from "./AnalysisModeTabs";
+import { ColumnCompletenessChart } from "./ColumnCompletenessChart";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { ColumnVisibilityPicker } from "./ColumnVisibilityPicker";
+import { CompletenessPatternsChart } from "./CompletenessPatternsChart";
+import { ColumnStatusRowsDialog } from "./ColumnStatusRowsDialog";
+import type { ColumnCompleteness } from "./ColumnCompletenessChart";
 import { PatternRowsDialog } from "./PatternRowsDialog";
+import type { ColumnStatus } from "./columnStatusRows";
 import type { RowColumnMode } from "./rowColumnMode";
 import { PatternStatusLabel } from "./PatternPreview";
 import { DataAnalysisPanel } from "./DataAnalysisPanel";
@@ -57,17 +62,15 @@ import {
   warningDetailSummaryClasses,
 } from "./uiClasses";
 
-interface ColumnCompleteness {
-  name: string;
-  present_count: number;
-  present_share: number;
-  missing_count: number;
-  missing_share: number;
-}
-
 interface ColumnCompletenessSummary {
+  job_id: string;
   input_rows: number;
   columns: ColumnCompleteness[];
+}
+
+interface SelectedColumnStatus {
+  columnIndex: number;
+  status: ColumnStatus;
 }
 
 interface AnalysisJobProgress {
@@ -389,6 +392,8 @@ function App() {
   const [worksheetRowLimit, setWorksheetRowLimit] = useState<number | null>(null);
   const [columnNames, setColumnNames] = useState<string[]>([]);
   const [summary, setSummary] = useState<ColumnCompletenessSummary | null>(null);
+  const [selectedColumnStatus, setSelectedColumnStatus] =
+    useState<SelectedColumnStatus | null>(null);
   const [columnCompletenessSort, setColumnCompletenessSort] =
     useState<SortState<ColumnCompletenessSortKey> | null>(null);
   // Marker text is keyed by the column name the API reported; the API reports
@@ -444,6 +449,7 @@ function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestNumber = useRef(0);
+  const datasetFileInputRef = useRef<HTMLInputElement>(null);
 
   function beginRequest(): number {
     requestNumber.current = requestNumber.current + 1;
@@ -601,6 +607,17 @@ function App() {
     setColumnCompletenessSort((currentSort) => cycleSort(currentSort, sortKey));
   }
 
+  function handleColumnStatusSelected(columnIndex: number, status: ColumnStatus) {
+    if (summary === null || summary.columns[columnIndex] === undefined) {
+      return;
+    }
+    setSelectedColumnStatus({ columnIndex, status });
+  }
+
+  function handleChooseNewDataset() {
+    datasetFileInputRef.current?.click();
+  }
+
   function handlePatternSortChanged(sortKey: PatternSortKey) {
     setPatternSort((currentSort) => cycleSort(currentSort, sortKey));
     clearPatternDetails();
@@ -754,6 +771,7 @@ function App() {
     // marker setting, or result of a previous dataset may survive into it.
     setColumnNames([]);
     setSummary(null);
+    setSelectedColumnStatus(null);
     setColumnCompletenessSort(null);
     setMissingMarkersText({});
     setAppliedMissingValueMarkers({});
@@ -884,6 +902,7 @@ function App() {
     }
 
     setErrorMessage(null);
+    setSelectedColumnStatus(null);
     // The Missing Value rules changed, so any earlier pattern summary no
     // longer describes the current rules.
     setPatternSummary(null);
@@ -1477,7 +1496,8 @@ function App() {
             <label className="grid min-w-0 content-start gap-2 text-sm font-semibold text-text-secondary">
               <span>CSV or XLSX file</span>
               <input
-                  className="block min-h-11 w-full min-w-0 rounded-control border border-dashed border-border-strong bg-surface px-3 py-2 text-sm font-normal text-text file:mr-3 file:min-h-10 file:rounded-md file:border file:border-border-strong file:bg-surface-muted file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-text-secondary hover:file:bg-surface-accent file:active:bg-surface-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                ref={datasetFileInputRef}
+                className="block min-h-11 w-full min-w-0 rounded-control border border-dashed border-border-strong bg-surface px-3 py-2 text-sm font-normal text-text file:mr-3 file:min-h-10 file:rounded-md file:border file:border-border-strong file:bg-surface-muted file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-text-secondary hover:file:bg-surface-accent file:active:bg-surface-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                 type="file"
                 accept=".csv,.xlsx"
                 onChange={handleFileSelected}
@@ -1677,6 +1697,12 @@ function App() {
               This descriptive summary flags no value as a problem. Missing Value rules can be
               reviewed and updated in the shared settings above.
             </p>
+            <ColumnCompletenessChart
+              columns={summary.columns}
+              inputRows={summary.input_rows}
+              onStatusSelected={handleColumnStatusSelected}
+              onEmptyAction={handleChooseNewDataset}
+            />
             <div
               className={summaryTableFrameClasses}
               role="region"
@@ -1869,6 +1895,11 @@ function App() {
                     onVisibleColumnsChanged={handleVisibleAnalysisColumnsChanged}
                   />
                 </div>
+
+                <CompletenessPatternsChart
+                  summary={patternSummary}
+                  onPatternSelected={handlePatternPreviewOpened}
+                />
 
                 <div className="grid justify-items-start gap-3">
                   <p className="m-0 text-sm font-semibold text-text-secondary">Filter the displayed patterns</p>
@@ -2112,6 +2143,21 @@ function App() {
             exportSuccess={patternRowsExportSuccess}
             onExport={handlePatternRowsExport}
             onClose={handlePatternPreviewClosed}
+          />
+        )}
+        {selectedColumnStatus !== null && summary !== null && (
+          <ColumnStatusRowsDialog
+            key={`${summary.job_id}-${selectedColumnStatus.columnIndex}-${selectedColumnStatus.status}`}
+            jobId={summary.job_id}
+            columnIndex={selectedColumnStatus.columnIndex}
+            columnName={summary.columns[selectedColumnStatus.columnIndex]?.name ?? "column"}
+            status={selectedColumnStatus.status}
+            matchingRowCount={
+              selectedColumnStatus.status === "missing"
+                ? (summary.columns[selectedColumnStatus.columnIndex]?.missing_count ?? 0)
+                : (summary.columns[selectedColumnStatus.columnIndex]?.present_count ?? 0)
+            }
+            onClose={() => setSelectedColumnStatus(null)}
           />
         )}
     </main>

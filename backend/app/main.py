@@ -1,6 +1,7 @@
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, Form, HTTPException, Query, Response, UploadFile
 from starlette.background import BackgroundTask
@@ -14,12 +15,17 @@ from app.analysis_jobs import (
     PatternIndexNotFoundError,
     new_job_id,
 )
+from app.column_completeness_jobs import (
+    ColumnCompletenessJob,
+    ColumnCompletenessJobStore,
+    ColumnStatusTargetNotFoundError,
+    create_column_completeness_job,
+)
 from app.completeness import (
     UNREADABLE_CSV_MESSAGE,
     ColumnCompletenessSummary,
     MissingValueMarkersError,
     NoInputRowsError,
-    compute_column_completeness,
     parse_missing_markers,
     read_column_names,
     reject_markers_for_unknown_columns,
@@ -114,6 +120,7 @@ def create_application(
     prepare_work_directory(work_directory)
     job_store = AnalysisJobStore()
     data_analysis_job_store = DataAnalysisJobStore()
+    column_completeness_job_store = ColumnCompletenessJobStore()
     data_contract_job_store = DataContractJobStore()
 
     @asynccontextmanager
@@ -123,6 +130,7 @@ def create_application(
         finally:
             job_store.shutdown()
             data_analysis_job_store.shutdown()
+            column_completeness_job_store.shutdown()
             data_contract_job_store.shutdown()
 
     application = FastAPI(
@@ -138,6 +146,7 @@ def create_application(
         require_supported_file(file)
         job_store.clear()
         data_analysis_job_store.clear()
+        column_completeness_job_store.clear()
         data_contract_job_store.clear()
 
         request_directory = new_request_directory(work_directory)
@@ -175,15 +184,17 @@ def create_application(
         reset_analysis_results: bool = Form(default=False),
     ) -> dict[str, object]:
         require_supported_file(file)
-
-        request_directory = new_request_directory(work_directory)
+        job_id = new_job_id()
+        job_directory = new_job_directory(work_directory, job_id)
+        job: ColumnCompletenessJob | None = None
         try:
-            raw_file_path = await write_upload_to_raw_file(request_directory, file)
+            raw_file_path = await write_upload_to_raw_file(job_directory, file)
             require_non_empty_file(raw_file_path)
-            analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, request_directory)
-            summary = compute_column_completeness(
+            analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, job_directory)
+            job = create_column_completeness_job(
+                job_id,
+                job_directory,
                 analysis_csv_path,
-                analysis_database_path(request_directory),
                 parse_missing_markers(missing_markers),
             )
         except (
@@ -196,14 +207,58 @@ def create_application(
         except (CSVFileError, sqlite3.Error) as error:
             raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
         finally:
-            clean_up_request(request_directory)
+            if job is None:
+                clean_up_job(job_directory)
 
         if reset_analysis_results:
             job_store.clear()
             data_analysis_job_store.clear()
             data_contract_job_store.clear()
 
-        return column_completeness_response(summary)
+        column_completeness_job_store.replace_with(job)
+        summary_response = column_completeness_response(job.summary)
+        summary_response["job_id"] = job.job_id
+        return summary_response
+
+    @application.get(
+        "/api/column-completeness-jobs/{job_id}/columns/{column_index}/rows"
+    )
+    async def get_column_status_rows(
+        job_id: str,
+        column_index: int,
+        status: Literal["present", "missing"],
+        page: int = Query(default=1, ge=1),
+    ) -> dict[str, object]:
+        job = find_column_completeness_job_or_raise(job_id)
+        try:
+            return job.rows_page(column_index, status, page)
+        except ColumnStatusTargetNotFoundError as error:
+            raise column_status_request_error(error, job_id) from error
+
+    @application.get(
+        "/api/column-completeness-jobs/{job_id}/columns/{column_index}/exports/rows.csv"
+    )
+    async def download_column_status_rows_export(
+        job_id: str,
+        column_index: int,
+        status: Literal["present", "missing"],
+    ) -> Response:
+        job = find_column_completeness_job_or_raise(job_id)
+        try:
+            columns, matching_rows = job.open_rows_export(
+                column_index,
+                status,
+            )
+        except ColumnStatusTargetNotFoundError as error:
+            raise column_status_request_error(error, job_id) from error
+
+        export_name = f"column_{column_index + 1}_{status}_rows.csv"
+        return StreamingResponse(
+            iter_csv_text(columns, matching_rows),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{export_name}"'},
+            background=BackgroundTask(matching_rows.close),
+        )
 
     @application.post("/api/analysis-jobs", status_code=201)
     async def create_analysis_job(
@@ -530,6 +585,15 @@ def create_application(
             raise unknown_job_error(job_id)
         return job
 
+    def find_column_completeness_job_or_raise(job_id: str) -> ColumnCompletenessJob:
+        job = column_completeness_job_store.find(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Column Completeness details are not available for job {job_id!r}.",
+            )
+        return job
+
     def find_data_contract_job_or_raise(job_id: str) -> DataContractJob:
         job = data_contract_job_store.find(job_id)
         if job is None:
@@ -597,6 +661,16 @@ def data_analysis_rows_request_error(
     return HTTPException(
         status_code=404,
         detail=f"The requested result is not available for data analysis job {job_id!r}.",
+    )
+
+
+def column_status_request_error(
+    _error: ColumnStatusTargetNotFoundError,
+    job_id: str,
+) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail=f"The requested column status is not available for job {job_id!r}.",
     )
 
 

@@ -154,6 +154,222 @@ test("Formal Terms Summary retains terms, structural formats, and row-detail act
   assert.match(markup, /aria-label="View Input Rows for the format &quot;EMP-&lt;4 digits&gt;&quot;"/);
 });
 
+function findReactElementByType(element, expectedType) {
+  if (Array.isArray(element)) {
+    for (const child of element) {
+      const match = findReactElementByType(child, expectedType);
+      if (match !== null) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  if (!React.isValidElement(element)) {
+    return null;
+  }
+  if (element.type === expectedType) {
+    return element;
+  }
+
+  if (typeof element.type === "function") {
+    const match = findReactElementByType(element.type(element.props), expectedType);
+    if (match !== null) {
+      return match;
+    }
+  }
+
+  return findReactElementByType(element.props.children, expectedType);
+}
+
+function findFirstButton(element) {
+  if (Array.isArray(element)) {
+    for (const child of element) {
+      const button = findFirstButton(child);
+      if (button !== null) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  if (!React.isValidElement(element)) {
+    return null;
+  }
+  if (element.type === "button") {
+    return element;
+  }
+
+  return findFirstButton(element.props.children);
+}
+
+test("Formal Terms charts show top non-missing terms per column with non-missing denominators", async () => {
+  const { FormalTermsResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(FormalTermsResults, {
+      summary: {
+        kind: "formal_terms",
+        input_rows: 4,
+        selected_columns: ["Status", "Code"],
+        columns: [
+          {
+            name: "Status",
+            terms: [
+              { value: "Approved", count: 2, share: 0.5 },
+              { value: null, count: 1, share: 0.25 },
+              { value: "Pending", count: 1, share: 0.25 },
+            ],
+            format_patterns: [],
+          },
+          {
+            name: "Code",
+            terms: [{ value: "A-1", count: 4, share: 1 }],
+            format_patterns: [],
+          },
+        ],
+      },
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+
+  assert.match(markup, /Most common Formal Terms in Status/);
+  assert.match(markup, /Most common Formal Terms in Code/);
+  assert.match(markup, /66\.67% of non-missing Input Rows in Status/);
+  assert.match(markup, /33\.33% of non-missing Input Rows in Status/);
+  assert.match(markup, /100% of non-missing Input Rows in Code/);
+  assert.match(markup, /\(blank\)/);
+
+  const statusChart = markup.match(
+    /<section[^>]*aria-label="Most common Formal Terms in Status"[\s\S]*?<\/section>/,
+  )?.[0];
+  assert.ok(statusChart);
+  assert.doesNotMatch(statusChart, /\(blank\)/);
+  assert.match(statusChart, /Approved/);
+  assert.match(statusChart, /Pending/);
+});
+
+test("selecting a Formal Term chart bar opens the original term row-detail index", async () => {
+  const { FormalTermsResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const { FrequencyBarChart } = await viteServer.ssrLoadModule(
+    "/src/FrequencyBarChart.tsx",
+  );
+  let selectedDetail = null;
+  const resultsTree = FormalTermsResults({
+    summary: {
+      kind: "formal_terms",
+      input_rows: 10,
+      selected_columns: ["status"],
+      columns: [
+        {
+          name: "status",
+          terms: [
+            { value: null, count: 9, share: 0.9 },
+            { value: "Approved", count: 1, share: 0.1 },
+          ],
+          format_patterns: [],
+        },
+      ],
+    },
+    onDetailOpened: (detail) => {
+      selectedDetail = detail;
+    },
+    onChangeColumns: () => {},
+  });
+  const chartElement = findReactElementByType(resultsTree, FrequencyBarChart);
+  assert.ok(chartElement);
+  const chartTree = chartElement.type(chartElement.props);
+  const firstButton = findFirstButton(chartTree);
+
+  assert.ok(firstButton);
+  firstButton.props.onClick();
+  assert.deepEqual(selectedDetail.target, {
+    kind: "term",
+    columnIndex: 0,
+    itemIndex: 1,
+  });
+  assert.match(selectedDetail.description, /Approved/);
+});
+
+test("Group Data chart shows the most common exact keys and preserves row shares", async () => {
+  const { GroupDataResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(GroupDataResults, {
+      summary: {
+        kind: "group_data",
+        input_rows: 5,
+        selected_columns: ["Department", "Status"],
+        key_uniqueness: {
+          distinct_key_count: 3,
+          singleton_key_count: 1,
+          repeated_key_count: 2,
+          input_rows_in_repeated_key_groups: 4,
+          singleton_key_share: 1 / 3,
+        },
+        groups: [
+          { values: ["Sales", "Approved"], count: 2, share: 0.4 },
+          { values: ["Operations", null], count: 2, share: 0.4 },
+          { values: ["Support", "Pending"], count: 1, share: 0.2 },
+        ],
+      },
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+
+  assert.match(markup, /Most common Group Data Keys/);
+  assert.match(markup, /Department=Sales, Status=Approved/);
+  assert.match(markup, /40% of all Input Rows/);
+  assert.match(markup, /Department=Operations, Status=\(blank\)/);
+  assert.match(markup, /View Input Rows for the group Department=Sales, Status=Approved/);
+  assert.match(markup, /Group Data Summary table/);
+});
+
+test("selecting a ranked Group Data Key preserves its original row-detail index", async () => {
+  const { GroupDataChart } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const { FrequencyBarChart } = await viteServer.ssrLoadModule(
+    "/src/FrequencyBarChart.tsx",
+  );
+  let selectedGroupIndex = null;
+  const chartElement = GroupDataChart({
+    summary: {
+      kind: "group_data",
+      input_rows: 5,
+      selected_columns: ["Department"],
+      key_uniqueness: {
+        distinct_key_count: 2,
+        singleton_key_count: 1,
+        repeated_key_count: 1,
+        input_rows_in_repeated_key_groups: 4,
+        singleton_key_share: 0.5,
+      },
+      groups: [
+        { values: ["Support"], count: 1, share: 0.2 },
+        { values: ["Sales"], count: 4, share: 0.8 },
+      ],
+    },
+    onGroupSelected: (sourceIndex) => {
+      selectedGroupIndex = sourceIndex;
+    },
+    onChangeColumns: () => {},
+  });
+  assert.equal(chartElement.type, FrequencyBarChart);
+  const frequencyChartTree = chartElement.type(chartElement.props);
+  const firstButton = findFirstButton(frequencyChartTree);
+
+  assert.ok(firstButton);
+  firstButton.props.onClick();
+  assert.equal(selectedGroupIndex, 1);
+});
+
 test("every data column in analysis summaries exposes a filter and a sort control", async () => {
   const { FormalTermsResults, GroupDataResults } = await viteServer.ssrLoadModule(
     "/src/DataAnalysisPanel.tsx",
@@ -631,6 +847,84 @@ test("data-analysis CSV exports preserve column mode and row filters", async () 
     assert.equal(requestUrl.searchParams.get("column_index"), "2");
     assert.equal(requestUrl.searchParams.get("column_mode"), "analysis");
     assert.equal(requestUrl.searchParams.get("filters"), JSON.stringify(filters));
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("column-status row requests preserve the selected status and page", async () => {
+  const { fetchColumnStatusRowsPage } = await viteServer.ssrLoadModule(
+    "/src/columnStatusRows.ts",
+  );
+  const previousFetch = globalThis.fetch;
+  const requestSignal = new AbortController().signal;
+  let requestedUrl = "";
+  let requestedSignal;
+  globalThis.fetch = async (url, options) => {
+    requestedUrl = url;
+    requestedSignal = options.signal;
+    return {
+      ok: true,
+      json: async () => ({
+        columns: ["record_id", "value"],
+        rows: [["A1", null]],
+        page: 2,
+        page_size: 50,
+        total_rows: 51,
+      }),
+    };
+  };
+
+  try {
+    const page = await fetchColumnStatusRowsPage(
+      "job-123",
+      1,
+      "missing",
+      2,
+      requestSignal,
+    );
+
+    const requestUrl = new URL(requestedUrl, "http://localhost");
+    assert.equal(
+      requestUrl.pathname,
+      "/api/column-completeness-jobs/job-123/columns/1/rows",
+    );
+    assert.equal(requestUrl.searchParams.get("status"), "missing");
+    assert.equal(requestUrl.searchParams.get("page"), "2");
+    assert.equal(requestUrl.searchParams.has("filters"), false);
+    assert.equal(requestedSignal, requestSignal);
+    assert.equal(page.total_rows, 51);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("column-status CSV export targets all rows for the explicitly selected status", async () => {
+  const { downloadColumnStatusRowsCsv } = await viteServer.ssrLoadModule(
+    "/src/columnStatusRows.ts",
+  );
+  const previousFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = async (url) => {
+    requestedUrl = url;
+    return {
+      ok: false,
+      json: async () => ({ detail: "Expected export failure for request inspection." }),
+    };
+  };
+
+  try {
+    await assert.rejects(
+      downloadColumnStatusRowsCsv("job-123", 3, "present"),
+      /Expected export failure for request inspection\./,
+    );
+    const requestUrl = new URL(requestedUrl, "http://localhost");
+    assert.equal(
+      requestUrl.pathname,
+      "/api/column-completeness-jobs/job-123/columns/3/exports/rows.csv",
+    );
+    assert.equal(requestUrl.searchParams.get("status"), "present");
+    assert.equal(requestUrl.searchParams.has("filters"), false);
   } finally {
     globalThis.fetch = previousFetch;
   }

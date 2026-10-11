@@ -341,4 +341,7 @@ def test_changed_missing_markers_clear_the_contract_job(tmp_path: Path) -> None:
 
     assert completeness.status_code == 200
     assert client.get(f"/api/data-contract-jobs/{status['job_id']}").status_code == 404
-    assert list((work_directory / "uploads").iterdir()) == []
+    retained_directories = list((work_directory / "uploads").iterdir())
+    assert len(retained_directories) == 1
+    assert retained_directories[0].name == f"job-{completeness.json()['job_id']}"
+    assert [path.name for path in retained_directories[0].iterdir()] == ["analysis.sqlite3"]

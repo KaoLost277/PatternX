@@ -22,6 +22,7 @@ import type {
 } from "./dataAnalysisApi";
 import { DataAnalysisRowsDialog } from "./DataAnalysisRowsDialog";
 import { AnalysisSummaryTable } from "./AnalysisSummaryTable";
+import { FrequencyBarChart } from "./FrequencyBarChart";
 import type { RowColumnMode } from "./rowColumnMode";
 import type { RowColumnFilters } from "./rowFilters";
 import { CollapsibleSection } from "./CollapsibleSection";
@@ -213,6 +214,42 @@ function groupDescription(columns: string[], group: DataGroup): string {
     return `${columnName}=${formatTerm(group.values[columnIndex] ?? null)}`;
   });
   return groupValues.join(", ");
+}
+
+interface GroupDataChartProps {
+  summary: GroupDataSummary;
+  onGroupSelected: (sourceIndex: number) => void;
+  onChangeColumns: () => void;
+}
+
+export function GroupDataChart({
+  summary,
+  onGroupSelected,
+  onChangeColumns,
+}: GroupDataChartProps) {
+  const chartItems = summary.groups.map((group, sourceIndex) => {
+    const description = groupDescription(summary.selected_columns, group);
+    return {
+      key: `group-${sourceIndex}`,
+      sourceIndex,
+      label: description,
+      count: group.count,
+      share: summary.input_rows === 0 ? 0 : group.count / summary.input_rows,
+      detailLabel: `the group ${description}`,
+    };
+  });
+
+  return (
+    <FrequencyBarChart
+      title="Most common Group Data Keys"
+      categoryName="Group Data Keys"
+      denominatorDescription="of all Input Rows"
+      items={chartItems}
+      onSelect={(item) => onGroupSelected(item.sourceIndex)}
+      emptyActionLabel="Change selected columns"
+      onEmptyAction={onChangeColumns}
+    />
+  );
 }
 
 export function DataAnalysisPanel({
@@ -720,6 +757,27 @@ function FormalColumnResults({
     onDetailOpened(detail);
   }
 
+  const nonMissingInputRows = column.terms.reduce(
+    (total, term) => (term.value === null ? total : total + term.count),
+    0,
+  );
+  const termChartItems = column.terms.flatMap((term, sourceIndex) => {
+    if (term.value === null) {
+      return [];
+    }
+
+    return [
+      {
+        key: `term-${sourceIndex}`,
+        sourceIndex,
+        label: term.value,
+        count: term.count,
+        share: nonMissingInputRows === 0 ? 0 : term.count / nonMissingInputRows,
+        detailLabel: `the term ${JSON.stringify(term.value)}`,
+      },
+    ];
+  });
+
   function openFormatDetail(sourceIndex: number, pattern: DataFormatPattern) {
     onDetailOpened({
       target: { kind: "format", columnIndex, itemIndex: sourceIndex },
@@ -735,6 +793,16 @@ function FormalColumnResults({
       <p className={statusTextClasses}>
         {column.terms.length.toLocaleString()} distinct terms in {inputRows.toLocaleString()} Input Rows.
       </p>
+
+      <FrequencyBarChart
+        title={`Most common Formal Terms in ${column.name}`}
+        categoryName="Formal Terms"
+        denominatorDescription={`of non-missing Input Rows in ${column.name}`}
+        items={termChartItems}
+        onSelect={(item) => openTermDetail(item.sourceIndex)}
+        emptyActionLabel="Change selected columns"
+        onEmptyAction={onChangeColumns}
+      />
 
       <h5 className="text-sm font-semibold text-text-secondary">Terms</h5>
       {column.terms.length === 0 ? (
@@ -887,6 +955,17 @@ export function GroupDataResults({
           </div>
         </dl>
       </section>
+
+      <GroupDataChart
+        summary={summary}
+        onChangeColumns={onChangeColumns}
+        onGroupSelected={(sourceIndex) => {
+          const selectedGroup = summary.groups[sourceIndex];
+          if (selectedGroup !== undefined) {
+            openGroupDetail(sourceIndex, selectedGroup);
+          }
+        }}
+      />
 
       {summary.groups.length === 0 ? (
         <div className="grid justify-items-start gap-3">

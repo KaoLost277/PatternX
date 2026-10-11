@@ -141,11 +141,55 @@ def test_summary_matches_independent_reference_on_deterministic_fixture():
     assert_matches_reference(response.json(), COMPLETENESS_FIXTURE, missing_markers_by_column)
 
 
+def test_column_completeness_exposes_paged_status_rows_with_configured_missing_rules(tmp_path):
+    test_client = make_test_client(tmp_path / "work")
+    missing_markers = {"email": ["n/a"]}
+
+    summary_response = request_summary(
+        test_client,
+        COMPLETENESS_FIXTURE,
+        missing_markers,
+    )
+
+    assert summary_response.status_code == 200
+    job_id = summary_response.json().get("job_id")
+    assert isinstance(job_id, str), "the summary must identify its temporary row-details job"
+
+    missing_response = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/1/rows",
+        params={"status": "missing", "page": 1},
+    )
+    present_response = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/1/rows",
+        params={"status": "present", "page": 1},
+    )
+
+    assert missing_response.status_code == 200
+    assert missing_response.json() == {
+        "columns": ["id", "email", "phone", "amount", "notes"],
+        "rows": [
+            ["2", None, "555-0101", "0", "N/A"],
+            ["4", " n/a ", "555-0103", "7", None],
+        ],
+        "page": 1,
+        "page_size": 50,
+        "total_rows": 2,
+    }
+    assert present_response.status_code == 200
+    assert present_response.json()["total_rows"] == 3
+    assert [row[0] for row in present_response.json()["rows"]] == ["1", "3", "5"]
+
+    uploads_path = tmp_path / "work" / "uploads"
+    retained_directories = list(uploads_path.iterdir())
+    assert len(retained_directories) == 1
+    assert [path.name for path in retained_directories[0].iterdir()] == ["analysis.sqlite3"]
+
+
 def test_default_rules_treat_null_empty_and_whitespace_only_as_missing_and_zero_as_present():
     response = request_summary(client, DEFAULT_RULES_FIXTURE)
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert {key: value for key, value in response.json().items() if key != "job_id"} == {
         "input_rows": 4,
         "columns": [
             {
@@ -194,7 +238,7 @@ def test_rows_with_duplicate_identifier_values_are_counted_as_separate_input_row
     response = request_summary(client, DUPLICATE_IDENTIFIER_FIXTURE)
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert {key: value for key, value in response.json().items() if key != "job_id"} == {
         "input_rows": 4,
         "columns": [
             {
@@ -338,14 +382,131 @@ def test_summary_rejects_missing_markers_that_are_not_lists_of_strings():
     assert "missing" in not_a_list_response.json()["detail"].lower()
 
 
-def test_successful_summary_leaves_no_working_files_behind(tmp_path):
+def test_successful_summary_retains_only_the_database_for_row_details(tmp_path):
     work_directory = tmp_path / "work"
     test_client = make_test_client(work_directory)
 
     response = request_summary(test_client, COMPLETENESS_FIXTURE)
 
     assert response.status_code == 200
-    assert_no_working_files_left(work_directory)
+    job_id = response.json()["job_id"]
+    retained_directories = list((work_directory / "uploads").iterdir())
+    assert len(retained_directories) == 1
+    assert retained_directories[0].name == f"job-{job_id}"
+    assert [path.name for path in retained_directories[0].iterdir()] == ["analysis.sqlite3"]
+
+
+def test_replacing_column_summary_removes_previous_row_details(tmp_path):
+    work_directory = tmp_path / "work"
+    test_client = make_test_client(work_directory)
+    first_response = request_summary(test_client, COMPLETENESS_FIXTURE)
+    first_job_id = first_response.json()["job_id"]
+
+    second_response = request_summary(test_client, DUPLICATE_IDENTIFIER_FIXTURE)
+    second_job_id = second_response.json()["job_id"]
+    old_rows_response = test_client.get(
+        f"/api/column-completeness-jobs/{first_job_id}/columns/1/rows",
+        params={"status": "missing"},
+    )
+
+    assert second_job_id != first_job_id
+    assert old_rows_response.status_code == 404
+    assert not (work_directory / "uploads" / f"job-{first_job_id}").exists()
+    assert (work_directory / "uploads" / f"job-{second_job_id}" / "analysis.sqlite3").exists()
+
+
+def test_importing_a_new_dataset_removes_column_status_row_details(tmp_path):
+    test_client = make_test_client(tmp_path / "work")
+    summary_response = request_summary(test_client, COMPLETENESS_FIXTURE)
+    job_id = summary_response.json()["job_id"]
+
+    import_response = test_client.post(
+        "/api/imports",
+        files={"file": ("next.csv", b"name\nAda\n", "text/csv")},
+    )
+    rows_response = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/1/rows",
+        params={"status": "missing"},
+    )
+
+    assert import_response.status_code == 200
+    assert rows_response.status_code == 404
+    assert_no_working_files_left(tmp_path / "work")
+
+
+def test_column_status_rows_reject_unknown_columns_and_statuses(tmp_path):
+    test_client = make_test_client(tmp_path / "work")
+    summary_response = request_summary(test_client, COMPLETENESS_FIXTURE)
+    job_id = summary_response.json()["job_id"]
+
+    unknown_column_response = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/50/rows",
+        params={"status": "missing"},
+    )
+    unknown_status_response = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/1/rows",
+        params={"status": "unknown"},
+    )
+
+    assert unknown_column_response.status_code == 404
+    assert unknown_status_response.status_code == 422
+
+
+def test_column_status_pages_cover_all_matches_in_source_order(tmp_path):
+    test_client = make_test_client(tmp_path / "work")
+    row_count = 107
+    csv_lines = ["status,record_id"]
+    for row_index in range(row_count):
+        status = "" if row_index % 2 == 0 else "present"
+        csv_lines.append(f"{status},R{row_index:03}")
+    summary_response = request_summary(test_client, "\n".join(csv_lines).encode())
+    job_id = summary_response.json()["job_id"]
+
+    first_page = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/0/rows",
+        params={"status": "missing", "page": 1},
+    )
+    second_page = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/0/rows",
+        params={"status": "missing", "page": 2},
+    )
+    empty_page = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/0/rows",
+        params={"status": "missing", "page": 3},
+    )
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert empty_page.status_code == 200
+    assert [first_page.json()["total_rows"], second_page.json()["total_rows"]] == [54, 54]
+    assert [row[1] for row in first_page.json()["rows"]] == [
+        f"R{row_index:03}" for row_index in range(0, 100, 2)
+    ]
+    assert [row[1] for row in second_page.json()["rows"]] == ["R100", "R102", "R104", "R106"]
+    assert empty_page.json()["rows"] == []
+
+
+def test_column_status_export_is_explicit_and_contains_only_matching_rows(tmp_path):
+    test_client = make_test_client(tmp_path / "work")
+    summary_response = request_summary(
+        test_client,
+        COMPLETENESS_FIXTURE,
+        {"email": ["n/a"]},
+    )
+    job_id = summary_response.json()["job_id"]
+
+    export_response = test_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/1/exports/rows.csv",
+        params={"status": "missing"},
+    )
+
+    assert export_response.status_code == 200
+    assert export_response.headers["content-type"].startswith("text/csv")
+    assert list(csv.reader(io.StringIO(export_response.text.lstrip("\ufeff")))) == [
+        ["id", "email", "phone", "amount", "notes"],
+        ["2", "", "555-0101", "0", "N/A"],
+        ["4", " n/a ", "555-0103", "7", ""],
+    ]
 
 
 def test_failed_summary_leaves_no_working_files_behind(tmp_path):
@@ -355,4 +516,31 @@ def test_failed_summary_leaves_no_working_files_behind(tmp_path):
     response = request_summary(test_client, b"name,amount\nAda,1\nBob\n", file_name="broken.csv")
 
     assert response.status_code == 400
+    assert_no_working_files_left(work_directory)
+
+
+def test_backend_shutdown_cleans_retained_column_status_database(tmp_path):
+    work_directory = tmp_path / "work"
+    with make_test_client(work_directory) as test_client:
+        response = request_summary(test_client, COMPLETENESS_FIXTURE)
+        assert response.status_code == 200
+        assert list((work_directory / "uploads").iterdir())
+
+    assert_no_working_files_left(work_directory)
+
+
+def test_backend_startup_cleans_stale_column_status_database(tmp_path):
+    work_directory = tmp_path / "work"
+    previous_client = make_test_client(work_directory)
+    response = request_summary(previous_client, COMPLETENESS_FIXTURE)
+    job_id = response.json()["job_id"]
+    assert list((work_directory / "uploads").iterdir())
+
+    restarted_client = make_test_client(work_directory)
+    stale_rows_response = restarted_client.get(
+        f"/api/column-completeness-jobs/{job_id}/columns/1/rows",
+        params={"status": "missing"},
+    )
+
+    assert stale_rows_response.status_code == 404
     assert_no_working_files_left(work_directory)

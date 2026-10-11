@@ -12,12 +12,14 @@ Summary: for every column, the exact count and share of Input Rows with a presen
 and whitespace-only values are missing by default, additional missing value markers can be configured
 per column, and zero counts as present. The Completeness Patterns analysis groups rows by the selected
 columns' present and missing statuses. The Formal Terms analysis reports exact distinct terms and
-repeated structural formats. The Group Data analysis reports observed exact value combinations, their
-counts and shares, and a uniqueness summary for the selected Group Data Keys. Completeness Patterns,
-Formal Terms, Group Data, and Data Contracts run as background jobs. The app reports progress, elapsed
-time, and cancellation for each job. Completeness Patterns provides the aggregate downloads
-`column_completeness.csv` and `pattern_summary.csv`. Users can also open row details for a pattern,
-term, structural format, or Group Data Key and explicitly download its matching Input Rows as CSV.
+repeated structural formats. The Group Data analysis reports observed exact value combinations,
+their counts and shares, and a uniqueness summary for the selected Group Data Keys. Charts visualize
+Column Completeness, the most frequent Completeness Patterns, Formal Terms, and Group Data Keys; the
+exact tables remain available alongside the charts. Completeness Patterns, Formal Terms, Group Data,
+and Data Contracts run as background jobs. The app reports progress, elapsed time, and cancellation
+for each job. Completeness Patterns provides the aggregate downloads `column_completeness.csv` and
+`pattern_summary.csv`. Users can inspect matching Input Rows for column present/missing statuses,
+patterns, terms, structural formats, or Group Data Keys and explicitly download matching rows as CSV.
 
 Data Contracts let you create, import, and export a version 1 JSON contract, then check it against the
 selected file. Rules can require a value, allow exact values, or check an explicitly selected integer,
@@ -93,12 +95,13 @@ See [the synthetic SQLite benchmark report](docs/benchmarks/sqlite-synthetic-win
 machine- and workload-specific measurements at 1–2 million rows. They are not general performance
 guarantees.
 
-The latest successful Completeness Patterns, Formal Terms, or Group Data job may keep its temporary
-SQLite database while the backend runs. The database supports row details and exports. A newer job in
-the same mode, a newly accepted dataset import, changed Missing Value rules, graceful backend shutdown,
-or startup cleanup removes retained databases. Raw uploads and normalized worksheet copies are removed
-when analysis finishes. Data Contract jobs delete their SQLite database after computing aggregate
-results because they do not provide row details.
+The current successful Column Completeness Summary and the latest successful job for each analysis
+mode may keep a temporary SQLite database while the backend runs. These databases support paginated
+row details and explicit row-level exports. A replacement summary or job, a newly accepted dataset
+import, changed Missing Value rules, graceful backend shutdown, or startup cleanup removes the
+corresponding retained databases. Raw uploads and normalized worksheet copies are removed when the
+summary or analysis finishes. Data Contract jobs delete their SQLite database after computing
+aggregate results because they do not provide row details.
 
 ## Exports
 
@@ -115,9 +118,10 @@ CSV with a byte order mark so spreadsheet apps read them as text. Shares are wri
 A column name a spreadsheet could read as a formula, with or without leading whitespace, is prefixed
 with an apostrophe so it stays inert text.
 
-Row detail dialogs for Completeness Patterns, Formal Terms, and Group Data let users inspect matching
-Input Rows. The dialogs paginate results and let users explicitly download the matching rows as CSV.
-These row-level exports are separate from the aggregate summary downloads.
+Row detail dialogs for Column Completeness statuses, Completeness Patterns, Formal Terms, and Group
+Data let users inspect matching Input Rows. The dialogs paginate results and let users explicitly
+download matching rows as CSV. These row-level exports are separate from the aggregate summary
+downloads.
 
 ## Pattern previews
 
@@ -153,10 +157,11 @@ network requests. GitHub Actions runs the backend suite and frontend checks on W
 The API keeps working data under one work directory
 (`%TEMP%\patternx` on Windows, `/tmp/patternx` on macOS), organized as:
 
-- `uploads/` — one private directory per request and per analysis job, holding the raw upload, the
-  normalized CSV copy of the chosen worksheet, and the temporary SQLite database. Successful
-  analysis jobs may retain the database temporarily for row details; the upload and normalized copy
-  are removed when analysis finishes.
+- `uploads/` — one private directory per request and per retained result, holding the raw upload, the
+  normalized CSV copy of the chosen worksheet, and the temporary SQLite database. The current
+  successful Column Completeness Summary and successful analysis jobs may retain the database
+  temporarily for row details; the upload and normalized copy are removed when computation finishes.
 
-Failed and cancelled jobs leave no row-level data behind. Retained databases are removed when the job
-is replaced, the backend shuts down, or startup cleanup runs.
+Failed requests and failed or cancelled analysis jobs leave no new row-level data behind. Retained
+databases are removed when their summary or job is replaced, a new dataset import is accepted, the
+backend shuts down, or startup cleanup runs.
