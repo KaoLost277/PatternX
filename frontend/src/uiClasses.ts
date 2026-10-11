@@ -25,7 +25,7 @@ export const loadingSpinnerClasses =
   "inline-block size-3.5 shrink-0 animate-spin rounded-full border-2 border-border border-t-accent align-[-2px] motion-reduce:animate-none";
 
 export const summaryTableFrameClasses = [
-  "w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-control border",
+  "isolate w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-control border",
   "border-border bg-surface shadow-card focus-visible:outline-3",
   "focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
 ].join(" ");
