@@ -31,8 +31,6 @@ function renderDialog(ColumnStatusRowsDialogView, overrides = {}) {
         total_rows: 2,
       },
       requestedPage: 1,
-      filters: {},
-      onFiltersChanged: () => {},
       loading: false,
       error: null,
       onPageChange: () => {},
@@ -61,6 +59,7 @@ test("column-status details show matching source rows and an explicit export act
   assert.match(markup, /&lt;script&gt;unsafe&lt;\/script&gt;/);
   assert.doesNotMatch(markup, /<script\b/i);
   assert.doesNotMatch(markup, /Columns used in analysis/);
+  assert.doesNotMatch(markup, /aria-label="Filter /);
 });
 
 test("column-status details distinguish loading, empty, and retryable errors", async () => {

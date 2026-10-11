@@ -1,6 +1,3 @@
-import { serializeRowColumnFilters } from "./rowFilters";
-import type { RowColumnFilters } from "./rowFilters";
-
 export type ColumnStatus = "present" | "missing";
 
 export interface ColumnStatusRowsPage {
@@ -23,14 +20,9 @@ export async function fetchColumnStatusRowsPage(
   status: ColumnStatus,
   page: number,
   signal: AbortSignal,
-  filters: RowColumnFilters = {},
 ): Promise<ColumnStatusRowsPage> {
   const encodedJobId = encodeURIComponent(jobId);
   const queryParameters = new URLSearchParams({ status, page: String(page) });
-  const serializedFilters = serializeRowColumnFilters(filters);
-  if (serializedFilters !== null) {
-    queryParameters.set("filters", serializedFilters);
-  }
   const rowsUrl =
     `/api/column-completeness-jobs/${encodedJobId}/columns/${columnIndex}/rows?` +
     queryParameters.toString();
@@ -70,14 +62,9 @@ export async function downloadColumnStatusRowsCsv(
   jobId: string,
   columnIndex: number,
   status: ColumnStatus,
-  filters: RowColumnFilters = {},
 ): Promise<void> {
   const encodedJobId = encodeURIComponent(jobId);
   const queryParameters = new URLSearchParams({ status });
-  const serializedFilters = serializeRowColumnFilters(filters);
-  if (serializedFilters !== null) {
-    queryParameters.set("filters", serializedFilters);
-  }
   const exportUrl =
     `/api/column-completeness-jobs/${encodedJobId}/columns/${columnIndex}/exports/rows.csv?` +
     queryParameters.toString();

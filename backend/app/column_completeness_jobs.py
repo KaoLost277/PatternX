@@ -13,11 +13,6 @@ from app.completeness import (
     sqlite_column_name,
 )
 from app.row_details import SourceColumnProjection, source_column_projection
-from app.row_filters import (
-    ColumnFilters,
-    register_row_filter_functions,
-    row_filter_conditions,
-)
 from app.sqlite_storage import load_csv_into_database, open_analysis_database
 from app.workfiles import clean_up_job, clean_up_job_sources
 
@@ -104,7 +99,6 @@ class ColumnCompletenessJob:
         column_index: int,
         status: str,
         page: int,
-        filters: ColumnFilters | None = None,
     ) -> dict[str, object]:
         """Return one source-ordered page for the selected column status."""
         if column_index < 0 or column_index >= len(self.column_names):
@@ -120,7 +114,6 @@ class ColumnCompletenessJob:
                 query, count_query, parameters, projection = self._rows_query(
                     column_index,
                     status,
-                    filters,
                 )
                 total_rows = int(connection.execute(count_query, parameters).fetchone()[0])
                 offset = (page - 1) * COLUMN_STATUS_PAGE_SIZE
@@ -145,7 +138,6 @@ class ColumnCompletenessJob:
         self,
         column_index: int,
         status: str,
-        filters: ColumnFilters | None = None,
     ) -> tuple[list[str], ColumnStatusRowsExport]:
         """Open a streamed export for all Input Rows matching one column status."""
         if column_index < 0 or column_index >= len(self.column_names):
@@ -161,7 +153,6 @@ class ColumnCompletenessJob:
             query, _count_query, parameters, projection = self._rows_query(
                 column_index,
                 status,
-                filters,
             )
             cursor = connection.execute(query, parameters)
             rows = ColumnStatusRowsExport(cursor, connection, self._lock)
@@ -197,29 +188,19 @@ class ColumnCompletenessJob:
             self.column_names,
             self.missing_markers_by_column,
         )
-        register_row_filter_functions(connection)
 
     def _rows_query(
         self,
         column_index: int,
         status: str,
-        filters: ColumnFilters | None,
     ) -> tuple[str, str, list[object], SourceColumnProjection]:
         expected_present = int(status == "present")
         status_condition = (
             f"{presence_function_name(column_index)}"
             f"({sqlite_column_name(column_index)}) = ?"
         )
-        filter_conditions, filter_parameters = row_filter_conditions(
-            filters or {},
-            self.column_names,
-            lambda _source_index, sqlite_column: (
-                f"patternx_is_present_{_source_index}({sqlite_column}) = 0"
-            ),
-        )
-        conditions = [status_condition, *filter_conditions]
-        parameters: list[object] = [expected_present, *filter_parameters]
-        where_clause = " AND ".join(conditions)
+        where_clause = status_condition
+        parameters: list[object] = [expected_present]
         projection = source_column_projection(
             self.column_names,
             (),

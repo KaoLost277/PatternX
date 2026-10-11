@@ -7,7 +7,6 @@ import {
 } from "./columnStatusRows";
 import { InputRowsTable } from "./InputRowsTable";
 import type { ColumnStatus } from "./columnStatusRows";
-import type { RowColumnFilters } from "./rowFilters";
 import {
   dialogClasses,
   dialogHeadingClasses,
@@ -34,8 +33,6 @@ interface ColumnStatusRowsDialogViewProps {
   matchingRowCount: number;
   page: ColumnStatusRowsPage | null;
   requestedPage: number;
-  filters: RowColumnFilters;
-  onFiltersChanged: (filters: RowColumnFilters) => void;
   loading: boolean;
   error: string | null;
   onPageChange: (page: number) => void;
@@ -47,9 +44,16 @@ interface ColumnStatusRowsDialogViewProps {
   onClose: () => void;
 }
 
-function statusDescription(status: ColumnStatus): string {
-  return status === "missing" ? "is missing a value" : "has a value";
-}
+const COLUMN_STATUS_COPY: Record<ColumnStatus, { heading: string; countDescription: string }> = {
+  present: {
+    heading: "has a value",
+    countDescription: "have a value in",
+  },
+  missing: {
+    heading: "is missing a value",
+    countDescription: "have a Missing Value in",
+  },
+};
 
 export function ColumnStatusRowsDialogView({
   columnName,
@@ -57,8 +61,6 @@ export function ColumnStatusRowsDialogView({
   matchingRowCount,
   page,
   requestedPage,
-  filters,
-  onFiltersChanged,
   loading,
   error,
   onPageChange,
@@ -73,12 +75,10 @@ export function ColumnStatusRowsDialogView({
   const headingId = useId();
   const descriptionId = useId();
   const pageCount = Math.max(1, Math.ceil((page?.total_rows ?? matchingRowCount) / (page?.page_size ?? 50)));
-  const filtersActive = Object.keys(filters).length > 0;
-  const selectedStatus = statusDescription(status);
+  const statusCopy = COLUMN_STATUS_COPY[status];
   const description =
-    status === "missing"
-      ? `${matchingRowCount.toLocaleString()} Input Rows have a Missing Value in ${columnName}.`
-      : `${matchingRowCount.toLocaleString()} Input Rows have a value in ${columnName}.`;
+    `${matchingRowCount.toLocaleString()} Input Rows ` +
+    `${statusCopy.countDescription} ${columnName}.`;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -105,7 +105,7 @@ export function ColumnStatusRowsDialogView({
             className={`${dialogHeadingClasses} break-words [overflow-wrap:anywhere]`}
             id={headingId}
           >
-            Input Rows where {columnName} {selectedStatus}
+            Input Rows where {columnName} {statusCopy.heading}
           </h2>
           <p id={descriptionId} className={statusTextClasses}>
             {description}
@@ -168,37 +168,24 @@ export function ColumnStatusRowsDialogView({
       {!loading && error === null && page !== null && page.total_rows === 0 && (
         <div className="grid justify-items-start gap-3">
           <p className={hintTextClasses} role="status">
-            {filtersActive
-              ? "No Input Rows match the current filters for this column status."
-              : "No Input Rows were found for this column status."}
+            No Input Rows were found for this column status.
           </p>
-          {filtersActive && (
-            <button
-              type="button"
-              className={secondaryButtonClasses}
-              onClick={() => onFiltersChanged({})}
-            >
-              Clear all filters
-            </button>
-          )}
         </div>
       )}
 
       {!loading && error === null && page !== null && page.total_rows > 0 && (
         <div className="grid min-w-0 gap-4">
           <p className={statusTextClasses}>
-            Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()} Input Rows
-            {filtersActive
-              ? ` of ${matchingRowCount.toLocaleString()} match the current filters.`
-              : " match this column status."}{" "}
+            Page {page.page} of {pageCount} · {page.total_rows.toLocaleString()} matching Input Rows.{" "}
             Source columns and rows are shown in their original order.
           </p>
           <InputRowsTable
             ariaLabel="Input Rows table. Scroll to view additional columns or rows."
             columns={page.columns}
             rows={page.rows}
-            filters={filters}
-            onFiltersChanged={onFiltersChanged}
+            filters={{}}
+            onFiltersChanged={() => {}}
+            enableFilters={false}
           />
         </div>
       )}
@@ -241,7 +228,6 @@ export function ColumnStatusRowsDialog({
 }: ColumnStatusRowsDialogProps) {
   const [requestedPage, setRequestedPage] = useState(1);
   const [page, setPage] = useState<ColumnStatusRowsPage | null>(null);
-  const [filters, setFilters] = useState<RowColumnFilters>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryNumber, setRetryNumber] = useState(0);
@@ -258,7 +244,6 @@ export function ColumnStatusRowsDialog({
       status,
       requestedPage,
       controller.signal,
-      filters,
     )
       .then((rowsPage) => {
         if (!controller.signal.aborted) {
@@ -282,24 +267,14 @@ export function ColumnStatusRowsDialog({
       });
 
     return () => controller.abort();
-  }, [jobId, columnIndex, status, requestedPage, filters, retryNumber]);
-
-  function handleFiltersChanged(nextFilters: RowColumnFilters) {
-    setFilters(nextFilters);
-    setRequestedPage(1);
-    setPage(null);
-    setLoading(true);
-    setError(null);
-    setExportError(null);
-    setExportSuccess(null);
-  }
+  }, [jobId, columnIndex, status, requestedPage, retryNumber]);
 
   async function handleExport() {
     setExportLoading(true);
     setExportError(null);
     setExportSuccess(null);
     try {
-      await downloadColumnStatusRowsCsv(jobId, columnIndex, status, filters);
+      await downloadColumnStatusRowsCsv(jobId, columnIndex, status);
       setExportSuccess("CSV download started.");
     } catch (exportRequestError: unknown) {
       setExportError(
@@ -333,8 +308,6 @@ export function ColumnStatusRowsDialog({
       matchingRowCount={matchingRowCount}
       page={page}
       requestedPage={requestedPage}
-      filters={filters}
-      onFiltersChanged={handleFiltersChanged}
       loading={loading}
       error={error}
       onPageChange={handlePageChanged}

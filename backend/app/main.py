@@ -210,16 +210,12 @@ def create_application(
         column_index: int,
         status: Literal["present", "missing"],
         page: int = Query(default=1, ge=1),
-        filters_json: str | None = Query(default=None, alias="filters"),
     ) -> dict[str, object]:
         job = find_column_completeness_job_or_raise(job_id)
         try:
-            filters = parse_row_filters(filters_json)
-            return job.rows_page(column_index, status, page, filters)
+            return job.rows_page(column_index, status, page)
         except ColumnStatusTargetNotFoundError as error:
             raise column_status_request_error(error, job_id) from error
-        except (RowFilterRequestError, RowFilterColumnError) as error:
-            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @application.get(
         "/api/column-completeness-jobs/{job_id}/columns/{column_index}/exports/rows.csv"
@@ -228,20 +224,15 @@ def create_application(
         job_id: str,
         column_index: int,
         status: Literal["present", "missing"],
-        filters_json: str | None = Query(default=None, alias="filters"),
     ) -> Response:
         job = find_column_completeness_job_or_raise(job_id)
         try:
-            filters = parse_row_filters(filters_json)
             columns, matching_rows = job.open_rows_export(
                 column_index,
                 status,
-                filters,
             )
         except ColumnStatusTargetNotFoundError as error:
             raise column_status_request_error(error, job_id) from error
-        except (RowFilterRequestError, RowFilterColumnError) as error:
-            raise HTTPException(status_code=422, detail=str(error)) from error
 
         export_name = f"column_{column_index + 1}_{status}_rows.csv"
         return StreamingResponse(

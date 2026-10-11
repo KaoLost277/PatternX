@@ -127,18 +127,27 @@ test("frequency chart explains an empty result without drawing a zero category",
   const { FrequencyBarChart } = await viteServer.ssrLoadModule(
     "/src/FrequencyBarChart.tsx",
   );
-  const markup = renderToStaticMarkup(
-    React.createElement(FrequencyBarChart, {
-      title: "Formal Terms in empty_column",
-      categoryName: "Formal Terms",
-      denominatorDescription: "of non-missing Input Rows in empty_column",
-      items: [],
-      onSelect: () => {},
-    }),
-  );
+  let selectedAction = false;
+  const tree = FrequencyBarChart({
+    title: "Formal Terms in empty_column",
+    categoryName: "Formal Terms",
+    denominatorDescription: "of non-missing Input Rows in empty_column",
+    items: [],
+    onSelect: () => {},
+    emptyActionLabel: "Change selected columns",
+    onEmptyAction: () => {
+      selectedAction = true;
+    },
+  });
+  const markup = renderToStaticMarkup(tree);
 
   assert.match(markup, /No Formal Terms are available to chart/);
+  assert.match(markup, /Change selected columns/);
   assert.doesNotMatch(markup, /<li|Other/);
+  const actionButton = findFirstButton(tree);
+  assert.ok(actionButton);
+  actionButton.props.onClick();
+  assert.equal(selectedAction, true);
 });
 
 test("frequency chart selections are native keyboard-activatable buttons", async () => {
@@ -298,6 +307,7 @@ test("selecting a Column Completeness status action requests its source column a
     inputRows: 4,
     columnOrder: "missing",
     onColumnOrderChanged: () => {},
+    onEmptyAction: () => {},
     onStatusSelected: (columnIndex, status) => {
       selectedStatus = { columnIndex, status };
     },

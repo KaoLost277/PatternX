@@ -1,6 +1,10 @@
 import type { CSSProperties } from "react";
 import { formatShare } from "./displayFormat";
-import { hintTextClasses, statusTextClasses } from "./uiClasses";
+import {
+  hintTextClasses,
+  secondaryButtonClasses,
+  statusTextClasses,
+} from "./uiClasses";
 
 export interface FrequencyBarChartItem {
   key: string;
@@ -17,6 +21,8 @@ interface FrequencyBarChartProps {
   denominatorDescription: string;
   items: readonly FrequencyBarChartItem[];
   onSelect: (item: FrequencyBarChartItem) => void;
+  emptyActionLabel?: string;
+  onEmptyAction?: () => void;
 }
 
 const FREQUENCY_CHART_PREVIEW_LIMIT = 10;
@@ -35,6 +41,8 @@ export function FrequencyBarChart({
   denominatorDescription,
   items,
   onSelect,
+  emptyActionLabel,
+  onEmptyAction,
 }: FrequencyBarChartProps) {
   const rankedItems = items
     .map((item, sourceIndex) => ({ item, sourceIndex }))
@@ -50,9 +58,20 @@ export function FrequencyBarChart({
       <div className="grid min-w-0 gap-1">
         <h4 className="m-0 text-sm font-semibold text-text">{title}</h4>
         {items.length === 0 ? (
-          <p className={hintTextClasses} role="status">
-            No {categoryName} are available to chart.
-          </p>
+          <div className="grid justify-items-start gap-3">
+            <p className={hintTextClasses} role="status">
+              No {categoryName} are available to chart.
+            </p>
+            {emptyActionLabel !== undefined && onEmptyAction !== undefined && (
+              <button
+                type="button"
+                className={secondaryButtonClasses}
+                onClick={onEmptyAction}
+              >
+                {emptyActionLabel}
+              </button>
+            )}
+          </div>
         ) : (
           <p className={statusTextClasses}>
             Showing the top {chartItems.length} of {items.length.toLocaleString()} {categoryName}.

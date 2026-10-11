@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ColumnStatus } from "./columnStatusRows";
 import { formatShare } from "./displayFormat";
 import {
   hintTextClasses,
@@ -15,12 +16,12 @@ export interface ColumnCompleteness {
 }
 
 export type ColumnCompletenessChartOrder = "missing" | "present" | "source";
-export type ColumnStatus = "present" | "missing";
 
 interface ColumnCompletenessChartProps {
   columns: readonly ColumnCompleteness[];
   inputRows: number;
   onStatusSelected: (columnIndex: number, status: ColumnStatus) => void;
+  onEmptyAction: () => void;
 }
 
 interface ColumnCompletenessChartViewProps extends ColumnCompletenessChartProps {
@@ -58,6 +59,7 @@ export function ColumnCompletenessChartView({
   columnOrder,
   onColumnOrderChanged,
   onStatusSelected,
+  onEmptyAction,
 }: ColumnCompletenessChartViewProps) {
   const orderedColumns = columns
     .map((column, sourceIndex) => ({ column, sourceIndex }))
@@ -114,9 +116,14 @@ export function ColumnCompletenessChartView({
       </div>
 
       {columns.length === 0 ? (
-        <p className={hintTextClasses} role="status">
-          No columns are available to chart.
-        </p>
+        <div className="grid justify-items-start gap-3">
+          <p className={hintTextClasses} role="status">
+            No columns are available to chart.
+          </p>
+          <button type="button" className={secondaryButtonClasses} onClick={onEmptyAction}>
+            Choose another dataset
+          </button>
+        </div>
       ) : (
         <div
           className="grid max-h-[min(60vh,40rem)] min-w-0 gap-3 overflow-y-auto overscroll-contain rounded-control border border-border bg-surface p-3"
@@ -183,6 +190,7 @@ export function ColumnCompletenessChart({
   columns,
   inputRows,
   onStatusSelected,
+  onEmptyAction,
 }: ColumnCompletenessChartProps) {
   const [columnOrder, setColumnOrder] = useState<ColumnCompletenessChartOrder>("missing");
 
@@ -193,6 +201,7 @@ export function ColumnCompletenessChart({
       columnOrder={columnOrder}
       onColumnOrderChanged={setColumnOrder}
       onStatusSelected={onStatusSelected}
+      onEmptyAction={onEmptyAction}
     />
   );
 }

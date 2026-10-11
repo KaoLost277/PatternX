@@ -439,6 +439,7 @@ function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestNumber = useRef(0);
+  const datasetFileInputRef = useRef<HTMLInputElement>(null);
 
   function beginRequest(): number {
     requestNumber.current = requestNumber.current + 1;
@@ -595,6 +596,10 @@ function App() {
       return;
     }
     setSelectedColumnStatus({ columnIndex, status });
+  }
+
+  function handleChooseNewDataset() {
+    datasetFileInputRef.current?.click();
   }
 
   function handlePatternSortChanged(sortKey: PatternSortKey) {
@@ -1447,7 +1452,8 @@ function App() {
             <label className="grid min-w-0 content-start gap-2 text-sm font-semibold text-text-secondary">
               <span>CSV or XLSX file</span>
               <input
-                  className="block min-h-11 w-full min-w-0 rounded-control border border-dashed border-border-strong bg-surface px-3 py-2 text-sm font-normal text-text file:mr-3 file:min-h-10 file:rounded-md file:border file:border-border-strong file:bg-surface-muted file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-text-secondary hover:file:bg-surface-accent file:active:bg-surface-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                ref={datasetFileInputRef}
+                className="block min-h-11 w-full min-w-0 rounded-control border border-dashed border-border-strong bg-surface px-3 py-2 text-sm font-normal text-text file:mr-3 file:min-h-10 file:rounded-md file:border file:border-border-strong file:bg-surface-muted file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-text-secondary hover:file:bg-surface-accent file:active:bg-surface-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                 type="file"
                 accept=".csv,.xlsx"
                 onChange={handleFileSelected}
@@ -1651,6 +1657,7 @@ function App() {
               columns={summary.columns}
               inputRows={summary.input_rows}
               onStatusSelected={handleColumnStatusSelected}
+              onEmptyAction={handleChooseNewDataset}
             />
             <div
               className={summaryTableFrameClasses}

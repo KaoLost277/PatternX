@@ -359,6 +359,7 @@ test("selecting a ranked Group Data Key preserves its original row-detail index"
     onGroupSelected: (sourceIndex) => {
       selectedGroupIndex = sourceIndex;
     },
+    onChangeColumns: () => {},
   });
   assert.equal(chartElement.type, FrequencyBarChart);
   const frequencyChartTree = chartElement.type(chartElement.props);
@@ -846,13 +847,12 @@ test("data-analysis CSV exports preserve column mode and row filters", async () 
   }
 });
 
-test("column-status row requests preserve the selected status, page, and filters", async () => {
+test("column-status row requests preserve the selected status and page", async () => {
   const { fetchColumnStatusRowsPage } = await viteServer.ssrLoadModule(
     "/src/columnStatusRows.ts",
   );
   const previousFetch = globalThis.fetch;
   const requestSignal = new AbortController().signal;
-  const filters = { record_id: { kind: "contains", value: "A&B" } };
   let requestedUrl = "";
   let requestedSignal;
   globalThis.fetch = async (url, options) => {
@@ -877,7 +877,6 @@ test("column-status row requests preserve the selected status, page, and filters
       "missing",
       2,
       requestSignal,
-      filters,
     );
 
     const requestUrl = new URL(requestedUrl, "http://localhost");
@@ -887,7 +886,7 @@ test("column-status row requests preserve the selected status, page, and filters
     );
     assert.equal(requestUrl.searchParams.get("status"), "missing");
     assert.equal(requestUrl.searchParams.get("page"), "2");
-    assert.equal(requestUrl.searchParams.get("filters"), JSON.stringify(filters));
+    assert.equal(requestUrl.searchParams.has("filters"), false);
     assert.equal(requestedSignal, requestSignal);
     assert.equal(page.total_rows, 51);
   } finally {
@@ -895,7 +894,7 @@ test("column-status row requests preserve the selected status, page, and filters
   }
 });
 
-test("column-status CSV export targets only the explicitly selected status", async () => {
+test("column-status CSV export targets all rows for the explicitly selected status", async () => {
   const { downloadColumnStatusRowsCsv } = await viteServer.ssrLoadModule(
     "/src/columnStatusRows.ts",
   );
@@ -911,9 +910,7 @@ test("column-status CSV export targets only the explicitly selected status", asy
 
   try {
     await assert.rejects(
-      downloadColumnStatusRowsCsv("job-123", 3, "present", {
-        account: { kind: "exact", value: "primary" },
-      }),
+      downloadColumnStatusRowsCsv("job-123", 3, "present"),
       /Expected export failure for request inspection\./,
     );
     const requestUrl = new URL(requestedUrl, "http://localhost");
@@ -922,10 +919,7 @@ test("column-status CSV export targets only the explicitly selected status", asy
       "/api/column-completeness-jobs/job-123/columns/3/exports/rows.csv",
     );
     assert.equal(requestUrl.searchParams.get("status"), "present");
-    assert.equal(
-      requestUrl.searchParams.get("filters"),
-      JSON.stringify({ account: { kind: "exact", value: "primary" } }),
-    );
+    assert.equal(requestUrl.searchParams.has("filters"), false);
   } finally {
     globalThis.fetch = previousFetch;
   }

@@ -18,6 +18,7 @@ interface InputRowsTableProps {
   rows: (string | null)[][];
   filters: RowColumnFilters;
   onFiltersChanged: (filters: RowColumnFilters) => void;
+  enableFilters?: boolean;
 }
 
 function displayColumnName(columnName: string, columnIndex: number): string {
@@ -39,6 +40,7 @@ export function InputRowsTable({
   rows,
   filters,
   onFiltersChanged,
+  enableFilters = true,
 }: InputRowsTableProps) {
   const [filterEditorTarget, setFilterEditorTarget] =
     useState<ColumnFilterEditorTarget<string> | null>(null);
@@ -80,7 +82,7 @@ export function InputRowsTable({
 
   return (
     <div className="grid min-w-0 gap-3">
-      {activeFilters.length > 0 && (
+      {enableFilters && activeFilters.length > 0 && (
         <div className="grid min-w-0 gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className={statusTextClasses} role="status">
@@ -170,35 +172,41 @@ export function InputRowsTable({
                     key={columnIndex}
                     scope="col"
                   >
-                    <button
-                      type="button"
-                      className="flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded-sm text-left font-[inherit] text-inherit hover:text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-                      aria-label={`Filter ${displayedColumnName}`}
-                      aria-controls={filterPopoverId}
-                      aria-haspopup="dialog"
-                      aria-expanded={filterEditorTarget?.key === columnName}
-                      aria-pressed={columnFilterActive}
-                      onClick={(event) =>
-                        openFilterEditor(columnName, event.currentTarget)
-                      }
-                    >
+                    {enableFilters ? (
+                      <button
+                        type="button"
+                        className="flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded-sm text-left font-[inherit] text-inherit hover:text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                        aria-label={`Filter ${displayedColumnName}`}
+                        aria-controls={filterPopoverId}
+                        aria-haspopup="dialog"
+                        aria-expanded={filterEditorTarget?.key === columnName}
+                        aria-pressed={columnFilterActive}
+                        onClick={(event) =>
+                          openFilterEditor(columnName, event.currentTarget)
+                        }
+                      >
+                        <span className="min-w-0 [overflow-wrap:anywhere]">
+                          {displayedColumnName}
+                        </span>
+                        <svg
+                          className={`size-4 shrink-0 ${columnFilterActive ? "text-accent" : "text-text-muted"}`}
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M3 4h14l-5.2 6v5l-3.6 1.5V10L3 4Z"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    ) : (
                       <span className="min-w-0 [overflow-wrap:anywhere]">
                         {displayedColumnName}
                       </span>
-                      <svg
-                        className={`size-4 shrink-0 ${columnFilterActive ? "text-accent" : "text-text-muted"}`}
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M3 4h14l-5.2 6v5l-3.6 1.5V10L3 4Z"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </button>
+                    )}
                   </th>
                 );
               })}
@@ -220,14 +228,16 @@ export function InputRowsTable({
         </table>
       </div>
 
-      <ColumnFilterEditor
-        key={filterEditorTarget === null ? "closed" : `editing:${filterEditorTarget.key}`}
-        popoverId={filterPopoverId}
-        target={filterEditorTarget}
-        onApply={handleFilterApplied}
-        onClear={handleColumnFilterCleared}
-        onClose={closeFilterEditor}
-      />
+      {enableFilters && (
+        <ColumnFilterEditor
+          key={filterEditorTarget === null ? "closed" : `editing:${filterEditorTarget.key}`}
+          popoverId={filterPopoverId}
+          target={filterEditorTarget}
+          onApply={handleFilterApplied}
+          onClear={handleColumnFilterCleared}
+          onClose={closeFilterEditor}
+        />
+      )}
     </div>
   );
 }

@@ -218,9 +218,14 @@ function groupDescription(columns: string[], group: DataGroup): string {
 interface GroupDataChartProps {
   summary: GroupDataSummary;
   onGroupSelected: (sourceIndex: number) => void;
+  onChangeColumns: () => void;
 }
 
-export function GroupDataChart({ summary, onGroupSelected }: GroupDataChartProps) {
+export function GroupDataChart({
+  summary,
+  onGroupSelected,
+  onChangeColumns,
+}: GroupDataChartProps) {
   const chartItems = summary.groups.map((group, sourceIndex) => {
     const description = groupDescription(summary.selected_columns, group);
     return {
@@ -240,6 +245,8 @@ export function GroupDataChart({ summary, onGroupSelected }: GroupDataChartProps
       denominatorDescription="of all Input Rows"
       items={chartItems}
       onSelect={(item) => onGroupSelected(item.sourceIndex)}
+      emptyActionLabel="Change selected columns"
+      onEmptyAction={onChangeColumns}
     />
   );
 }
@@ -786,6 +793,8 @@ function FormalColumnResults({
         denominatorDescription={`of non-missing Input Rows in ${column.name}`}
         items={termChartItems}
         onSelect={(item) => openTermDetail(item.sourceIndex)}
+        emptyActionLabel="Change selected columns"
+        onEmptyAction={onChangeColumns}
       />
 
       <h5 className="text-sm font-semibold text-text-secondary">Terms</h5>
@@ -942,6 +951,7 @@ export function GroupDataResults({
 
       <GroupDataChart
         summary={summary}
+        onChangeColumns={onChangeColumns}
         onGroupSelected={(sourceIndex) => {
           const selectedGroup = summary.groups[sourceIndex];
           if (selectedGroup !== undefined) {

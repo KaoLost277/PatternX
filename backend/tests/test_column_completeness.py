@@ -474,13 +474,6 @@ def test_column_status_pages_cover_all_matches_in_source_order(tmp_path):
         f"/api/column-completeness-jobs/{job_id}/columns/0/rows",
         params={"status": "missing", "page": 3},
     )
-    filtered_rows = test_client.get(
-        f"/api/column-completeness-jobs/{job_id}/columns/0/rows",
-        params={
-            "status": "missing",
-            "filters": json.dumps({"record_id": {"kind": "contains", "value": "R100"}}),
-        },
-    )
 
     assert first_page.status_code == 200
     assert second_page.status_code == 200
@@ -491,9 +484,6 @@ def test_column_status_pages_cover_all_matches_in_source_order(tmp_path):
     ]
     assert [row[1] for row in second_page.json()["rows"]] == ["R100", "R102", "R104", "R106"]
     assert empty_page.json()["rows"] == []
-    assert filtered_rows.status_code == 200
-    assert filtered_rows.json()["rows"] == [[None, "R100"]]
-    assert filtered_rows.json()["total_rows"] == 1
 
 
 def test_column_status_export_is_explicit_and_contains_only_matching_rows(tmp_path):
