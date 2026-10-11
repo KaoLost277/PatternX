@@ -68,6 +68,42 @@ class FormalTermsSummary:
 
 
 @dataclass(frozen=True)
+class InputRowsMetric:
+    count: int
+    input_rows: int
+
+    @property
+    def share(self) -> float:
+        return self.count / self.input_rows
+
+
+@dataclass(frozen=True)
+class PresentValuesMetric:
+    count: int
+    present_values: int
+
+    @property
+    def share(self) -> float | None:
+        if self.present_values == 0:
+            return None
+        return self.count / self.present_values
+
+
+@dataclass(frozen=True)
+class ColumnProfile:
+    name: str
+    present: InputRowsMetric
+    missing: InputRowsMetric
+    distinct_terms: PresentValuesMetric
+
+
+@dataclass(frozen=True)
+class ColumnProfileSummary:
+    input_rows: int
+    columns: tuple[ColumnProfile, ...]
+
+
+@dataclass(frozen=True)
 class DataGroup:
     values: tuple[str | None, ...]
     count: int
@@ -276,6 +312,65 @@ def compute_formal_terms(
         selected_columns=tuple(selected_columns),
         columns=column_results,
     )
+
+
+def compute_column_profile(
+    connection: sqlite3.Connection,
+    column_names: list[str],
+    missing_markers_by_column: dict[str, list[str]],
+    progress_reporter: Callable[[int, int], None] | None = None,
+    cancellation_check: Callable[[], bool] | None = None,
+) -> ColumnProfileSummary:
+    reject_markers_for_unknown_columns(column_names, missing_markers_by_column)
+    if not column_names:
+        raise ValueError("The file must contain at least one column to build a profile.")
+
+    register_data_value_functions(connection, column_names, missing_markers_by_column)
+    profiles: list[ColumnProfile] = []
+    input_rows: int | None = None
+
+    for column_index, column_name in enumerate(column_names):
+        raise_if_cancelled(cancellation_check)
+        value_expression = (
+            f"{value_function_name(column_index)}({sqlite_column_name(column_index)})"
+        )
+        result = connection.execute(
+            f'SELECT count(*), count({value_expression}), '
+            f'count(DISTINCT {value_expression}) FROM "{ANALYSIS_TABLE_NAME}"'
+        ).fetchone()
+        if result is None:
+            raise ValueError("The column profile query did not return a result.")
+
+        column_input_rows = int(result[0])
+        present_values = int(result[1])
+        distinct_terms = int(result[2])
+        if column_input_rows == 0:
+            raise NoInputRowsError("The uploaded file contains a header row but no Input Rows.")
+        if input_rows is not None and column_input_rows != input_rows:
+            raise ValueError("The column profile queries returned inconsistent Input Row counts.")
+        input_rows = column_input_rows
+
+        profiles.append(
+            ColumnProfile(
+                name=column_name,
+                present=InputRowsMetric(count=present_values, input_rows=column_input_rows),
+                missing=InputRowsMetric(
+                    count=column_input_rows - present_values,
+                    input_rows=column_input_rows,
+                ),
+                distinct_terms=PresentValuesMetric(
+                    count=distinct_terms,
+                    present_values=present_values,
+                ),
+            )
+        )
+        if progress_reporter is not None:
+            progress_reporter(column_index + 1, len(column_names))
+
+    if input_rows is None:
+        raise NoInputRowsError("The uploaded file contains a header row but no Input Rows.")
+
+    return ColumnProfileSummary(input_rows=input_rows, columns=tuple(profiles))
 
 
 def compute_group_data(

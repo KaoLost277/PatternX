@@ -24,7 +24,14 @@ from app.completeness import (
     read_column_names,
     reject_markers_for_unknown_columns,
 )
+from app.column_profile_jobs import (
+    COLUMN_PROFILE_KIND,
+    ColumnProfileInputs,
+    ColumnProfileJob,
+    ColumnProfileJobStore,
+)
 from app.data_analyses import (
+    ColumnProfileSummary,
     DataAnalysisInputs,
     DataAnalysisSelectionError,
     FormalTermsSummary,
@@ -115,6 +122,7 @@ def create_application(
     job_store = AnalysisJobStore()
     data_analysis_job_store = DataAnalysisJobStore()
     data_contract_job_store = DataContractJobStore()
+    column_profile_job_store = ColumnProfileJobStore()
 
     @asynccontextmanager
     async def application_lifespan(_application: FastAPI):
@@ -124,6 +132,7 @@ def create_application(
             job_store.shutdown()
             data_analysis_job_store.shutdown()
             data_contract_job_store.shutdown()
+            column_profile_job_store.shutdown()
 
     application = FastAPI(
         title="PatternX Data Profiler",
@@ -139,6 +148,7 @@ def create_application(
         job_store.clear()
         data_analysis_job_store.clear()
         data_contract_job_store.clear()
+        column_profile_job_store.clear()
 
         request_directory = new_request_directory(work_directory)
         try:
@@ -202,6 +212,7 @@ def create_application(
             job_store.clear()
             data_analysis_job_store.clear()
             data_contract_job_store.clear()
+            column_profile_job_store.clear()
 
         return column_completeness_response(summary)
 
@@ -360,6 +371,47 @@ def create_application(
         data_contract_job_store.replace_with(job)
         return data_contract_job_status_response(job)
 
+    @application.post("/api/column-profile-jobs", status_code=201)
+    async def create_column_profile_job(
+        file: UploadFile,
+        sheet: str | None = Form(default=None),
+        missing_markers: str | None = Form(default=None),
+    ) -> dict[str, object]:
+        require_supported_file(file)
+
+        job_id = new_job_id()
+        job_directory = new_job_directory(work_directory, job_id)
+        inputs_are_ready = False
+        try:
+            raw_file_path = await write_upload_to_raw_file(job_directory, file)
+            require_non_empty_file(raw_file_path)
+            analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, job_directory)
+            column_names = read_column_names(analysis_csv_path)
+            analysis_inputs = build_column_profile_inputs(
+                analysis_csv_path,
+                analysis_database_path(job_directory),
+                column_names,
+                missing_markers,
+            )
+            inputs_are_ready = True
+        except HTTPException:
+            raise
+        except (
+            MissingValueMarkersError,
+            WorkbookFileError,
+            WorksheetSelectionError,
+        ) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except (CSVFileError, sqlite3.Error) as error:
+            raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
+        finally:
+            if not inputs_are_ready:
+                clean_up_job(job_directory)
+
+        job = ColumnProfileJob(job_id, job_directory, analysis_inputs)
+        column_profile_job_store.replace_with(job)
+        return column_profile_job_status_response(job)
+
     @application.get("/api/analysis-jobs/{job_id}")
     async def get_analysis_job(job_id: str) -> dict[str, object]:
         return analysis_job_status_response(find_job_or_raise(job_id))
@@ -447,6 +499,17 @@ def create_application(
         if job is None:
             raise unknown_job_error(job_id)
         return data_contract_job_status_response(job)
+
+    @application.get("/api/column-profile-jobs/{job_id}")
+    async def get_column_profile_job(job_id: str) -> dict[str, object]:
+        return column_profile_job_status_response(find_column_profile_job_or_raise(job_id))
+
+    @application.post("/api/column-profile-jobs/{job_id}/cancel")
+    async def cancel_column_profile_job(job_id: str) -> dict[str, object]:
+        job = column_profile_job_store.cancel(job_id)
+        if job is None:
+            raise unknown_job_error(job_id)
+        return column_profile_job_status_response(job)
 
     @application.get("/api/data-analysis-jobs/{job_id}/rows")
     async def get_data_analysis_rows(
@@ -536,6 +599,12 @@ def create_application(
             raise unknown_job_error(job_id)
         return job
 
+    def find_column_profile_job_or_raise(job_id: str) -> ColumnProfileJob:
+        job = column_profile_job_store.find(job_id)
+        if job is None:
+            raise unknown_job_error(job_id)
+        return job
+
     return application
 
 
@@ -581,6 +650,23 @@ def build_data_contract_inputs(
         analysis_csv_path=analysis_csv_path,
         database_path=database_path,
         resolved_contract=resolved_contract,
+    )
+
+
+def build_column_profile_inputs(
+    analysis_csv_path: Path,
+    database_path: Path,
+    column_names: list[str],
+    raw_missing_markers: str | None,
+) -> ColumnProfileInputs:
+    missing_markers_by_column = parse_missing_markers(raw_missing_markers)
+    reject_markers_for_unknown_columns(column_names, missing_markers_by_column)
+
+    return ColumnProfileInputs(
+        analysis_csv_path=analysis_csv_path,
+        database_path=database_path,
+        column_names=column_names,
+        missing_markers_by_column=missing_markers_by_column,
     )
 
 
@@ -844,6 +930,66 @@ def data_contract_job_status_response(job: DataContractJob) -> dict[str, object]
         "progress": progress,
         "result": result,
         "error": status.error,
+    }
+
+
+def column_profile_job_status_response(job: ColumnProfileJob) -> dict[str, object]:
+    status = job.status_snapshot()
+
+    if status.progress is None:
+        progress = None
+    else:
+        progress = {
+            "items_done": status.progress.items_done,
+            "items_total": status.progress.items_total,
+        }
+
+    result = (
+        column_profile_summary_response(status.result)
+        if isinstance(status.result, ColumnProfileSummary)
+        else None
+    )
+
+    return {
+        "job_id": status.job_id,
+        "analysis_kind": COLUMN_PROFILE_KIND,
+        "state": status.state,
+        "stage": status.stage,
+        "elapsed_seconds": status.elapsed_seconds,
+        "progress": progress,
+        "result": result,
+        "error": status.error,
+    }
+
+
+def column_profile_summary_response(summary: ColumnProfileSummary) -> dict[str, object]:
+    return {
+        "kind": COLUMN_PROFILE_KIND,
+        "input_rows": summary.input_rows,
+        "columns": [
+            {
+                "name": column.name,
+                "present": {
+                    "count": column.present.count,
+                    "denominator": column.present.input_rows,
+                    "denominator_kind": "input_rows",
+                    "share": column.present.share,
+                },
+                "missing": {
+                    "count": column.missing.count,
+                    "denominator": column.missing.input_rows,
+                    "denominator_kind": "input_rows",
+                    "share": column.missing.share,
+                },
+                "distinct_terms": {
+                    "count": column.distinct_terms.count,
+                    "denominator": column.distinct_terms.present_values,
+                    "denominator_kind": "present_values",
+                    "share": column.distinct_terms.share,
+                },
+            }
+            for column in summary.columns
+        ],
     }
 
 
