@@ -14,6 +14,79 @@ after(async () => {
   await viteServer.close();
 });
 
+function successfulColumnProfileStatus() {
+  return {
+    job_id: "profile-job-1",
+    analysis_kind: "column_profile",
+    state: "succeeded",
+    stage: null,
+    elapsed_seconds: 0.5,
+    progress: { items_done: 2, items_total: 2 },
+    result: {
+      kind: "column_profile",
+      input_rows: 4,
+      columns: [
+        {
+          name: "Status",
+          present: {
+            count: 3,
+            denominator: 4,
+            denominator_kind: "input_rows",
+            share: 0.75,
+          },
+          missing: {
+            count: 1,
+            denominator: 4,
+            denominator_kind: "input_rows",
+            share: 0.25,
+          },
+          distinct_terms: {
+            count: 2,
+            denominator: 3,
+            denominator_kind: "present_values",
+            share: 2 / 3,
+          },
+        },
+        {
+          name: "All missing",
+          present: {
+            count: 0,
+            denominator: 4,
+            denominator_kind: "input_rows",
+            share: 0,
+          },
+          missing: {
+            count: 4,
+            denominator: 4,
+            denominator_kind: "input_rows",
+            share: 1,
+          },
+          distinct_terms: {
+            count: 0,
+            denominator: 0,
+            denominator_kind: "present_values",
+            share: null,
+          },
+        },
+      ],
+    },
+    error: null,
+  };
+}
+
+function collectElements(element, predicate, collected = []) {
+  if (!React.isValidElement(element)) {
+    return collected;
+  }
+  if (predicate(element)) {
+    collected.push(element);
+  }
+  for (const child of React.Children.toArray(element.props.children)) {
+    collectElements(child, predicate, collected);
+  }
+  return collected;
+}
+
 test("Group Data mode renders explicit selected-column controls", async () => {
   const { DataAnalysisPanel } = await viteServer.ssrLoadModule("/src/DataAnalysisPanel.tsx");
   const markup = renderToStaticMarkup(
@@ -151,6 +224,37 @@ test("Formal Terms Summary retains terms, structural formats, and row-detail act
   assert.equal((markup.match(/aria-haspopup="dialog"/g) ?? []).length, 9);
   assert.match(markup, /aria-label="View Input Rows for the term &quot;EMP-0001&quot;"/);
   assert.match(markup, /aria-label="View Input Rows for the format &quot;EMP-&lt;4 digits&gt;&quot;"/);
+});
+
+test("Formal Terms excludes the Missing Value bucket from its distinct-term count", async () => {
+  const { FormalTermsResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(FormalTermsResults, {
+      summary: {
+        kind: "formal_terms",
+        input_rows: 2,
+        selected_columns: ["Status"],
+        columns: [
+          {
+            name: "Status",
+            terms: [
+              { value: "Open", count: 1, share: 0.5 },
+              { value: null, count: 1, share: 0.5 },
+            ],
+            format_patterns: [],
+          },
+        ],
+      },
+      onDetailOpened: () => {},
+      onChangeColumns: () => {},
+    }),
+  );
+
+  assert.match(markup, /1 distinct Formal Terms in 2 Input Rows\. Missing Values are excluded\./);
+  assert.doesNotMatch(markup, /2 distinct Formal Terms/);
+  assert.match(markup, /\(blank\)/);
 });
 
 test("every data column in analysis summaries exposes a filter and a sort control", async () => {
@@ -303,6 +407,7 @@ test("the top navigation exposes all analysis modes as disabled tabs before impo
   assert.match(markup, /<nav[^>]*aria-label="Analysis modes"[^>]*role="tablist"/);
   for (const mode of [
     "Completeness Patterns",
+    "Column Profile",
     "Formal Terms",
     "Group Data",
     "Data Contracts",
@@ -312,7 +417,13 @@ test("the top navigation exposes all analysis modes as disabled tabs before impo
     );
     assert.match(markup, tabButtonPattern);
   }
-  for (const mode of ["completeness", "formal_terms", "group_data", "data_contract"]) {
+  for (const mode of [
+    "completeness",
+    "column_profile",
+    "formal_terms",
+    "group_data",
+    "data_contract",
+  ]) {
     assert.match(markup, new RegExp(`aria-controls="analysis-panel-${mode}"`));
     assert.match(markup, new RegExp(`id="analysis-panel-${mode}"[^>]*role="tabpanel"`));
   }
@@ -335,6 +446,243 @@ test("the selected analysis tab exposes its active state", async () => {
   assert.match(markup, /<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Formal Terms<\/button>/);
   assert.match(markup, /id="analysis-tab-formal_terms"/);
   assert.match(markup, /aria-controls="analysis-panel-formal_terms"/);
+});
+
+test("selecting the Column Profile tab reports the selected mode", async () => {
+  const { AnalysisModeTabs } = await viteServer.ssrLoadModule(
+    "/src/AnalysisModeTabs.tsx",
+  );
+  const selectedModes = [];
+  const tabs = AnalysisModeTabs({
+    selectedMode: null,
+    enabled: true,
+    onSelect: (mode) => selectedModes.push(mode),
+  });
+  const profileTab = collectElements(
+    tabs,
+    (element) => element.type === "button" && element.props.id === "analysis-tab-column_profile",
+  )[0];
+
+  assert.ok(profileTab);
+  profileTab.props.onClick();
+
+  assert.deepEqual(selectedModes, ["column_profile"]);
+});
+
+test("column profile panel renders empty, loading, error, and populated states", async () => {
+  const { ColumnProfileView } = await viteServer.ssrLoadModule(
+    "/src/ColumnProfilePanel.tsx",
+  );
+  const { parseColumnProfileJobStatus } = await viteServer.ssrLoadModule(
+    "/src/dataAnalysisApi.ts",
+  );
+  const successfulJob = parseColumnProfileJobStatus(successfulColumnProfileStatus());
+  const renderProfile = (state, onFormalTermsRequested = () => {}) => {
+    return React.createElement(ColumnProfileView, {
+      state,
+      canceling: false,
+      onBuildProfile: () => {},
+      onCancelProfile: () => {},
+      onFormalTermsRequested,
+    });
+  };
+
+  const emptyMarkup = renderToStaticMarkup(renderProfile({ kind: "empty" }));
+  const loadingMarkup = renderToStaticMarkup(
+    renderProfile({
+      kind: "job",
+      job: {
+        ...successfulJob,
+        state: "running",
+        stage: "Counting values in each source column",
+        progress: { itemsDone: 1, itemsTotal: 2 },
+        result: null,
+      },
+    }),
+  );
+  const errorMarkup = renderToStaticMarkup(
+    renderProfile({
+      kind: "job",
+      job: {
+        ...successfulJob,
+        state: "failed",
+        stage: null,
+        progress: null,
+        result: null,
+        error: "The uploaded file contains a header row but no Input Rows.",
+      },
+    }),
+  );
+
+  assert.match(emptyMarkup, /No column profile has been built for this file\./);
+  assert.match(emptyMarkup, />Build profile</);
+  assert.match(loadingMarkup, /role="status"/);
+  assert.match(loadingMarkup, /Counting values in each source column/);
+  assert.match(loadingMarkup, /1 of 2 columns profiled\./);
+  assert.match(loadingMarkup, />Cancel profile</);
+  assert.match(errorMarkup, /role="alert"/);
+  assert.match(errorMarkup, /The uploaded file contains a header row but no Input Rows\./);
+  assert.match(errorMarkup, />Try again</);
+
+  let buildRequests = 0;
+  const emptyView = ColumnProfileView({
+    state: { kind: "empty" },
+    canceling: false,
+    onBuildProfile: () => {
+      buildRequests += 1;
+    },
+    onCancelProfile: () => {},
+    onFormalTermsRequested: () => {},
+  });
+  assert.equal(buildRequests, 0);
+  const buildButton = collectElements(
+    emptyView,
+    (element) => element.type === "button" && element.props.children === "Build profile",
+  )[0];
+  assert.ok(buildButton);
+  buildButton.props.onClick();
+  assert.equal(buildRequests, 1);
+
+  const requestedColumns = [];
+  const populatedView = ColumnProfileView({
+    state: { kind: "job", job: successfulJob },
+    canceling: false,
+    onBuildProfile: () => {},
+    onCancelProfile: () => {},
+    onFormalTermsRequested: (columnName) => requestedColumns.push(columnName),
+  });
+  const populatedMarkup = renderToStaticMarkup(populatedView);
+
+  assert.match(populatedMarkup, /Column profile results/);
+  assert.match(populatedMarkup, /4 Input Rows/);
+  assert.match(populatedMarkup, /3 of 4 Input Rows \(75%\)/);
+  assert.match(populatedMarkup, /1 of 4 Input Rows \(25%\)/);
+  assert.match(populatedMarkup, /2 of 3 present values \(66\.67%\)/);
+  assert.match(populatedMarkup, /0 of 0 present values \(share unavailable because there are no present values\)/);
+  assert.ok(populatedMarkup.indexOf("Status") < populatedMarkup.indexOf("All missing"));
+  assert.match(populatedMarkup, /Open Formal Terms for Status/);
+  assert.match(populatedMarkup, /Present and missing shares use all Input Rows/);
+
+  const formalTermsButton = collectElements(
+    populatedView,
+    (element) => element.type === "button" && element.props["aria-label"] === "Open Formal Terms for Status",
+  )[0];
+  assert.ok(formalTermsButton);
+  formalTermsButton.props.onClick();
+  assert.deepEqual(requestedColumns, ["Status"]);
+});
+
+test("profile headers render as inert text and scope changes reset the panel key", async () => {
+  const { ColumnProfileView } = await viteServer.ssrLoadModule(
+    "/src/ColumnProfilePanel.tsx",
+  );
+  const { columnProfileScopeKey } = await viteServer.ssrLoadModule(
+    "/src/columnProfileScope.ts",
+  );
+  const { parseColumnProfileJobStatus } = await viteServer.ssrLoadModule(
+    "/src/dataAnalysisApi.ts",
+  );
+  const hostileHeader = "<img src=x onerror=alert(1)>";
+  const status = parseColumnProfileJobStatus(successfulColumnProfileStatus());
+  status.result.columns[0].name = hostileHeader;
+  const markup = renderToStaticMarkup(
+    React.createElement(ColumnProfileView, {
+      state: { kind: "job", job: status },
+      canceling: false,
+      onBuildProfile: () => {},
+      onCancelProfile: () => {},
+      onFormalTermsRequested: () => {},
+    }),
+  );
+
+  assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(markup, /<img\b/i);
+  assert.equal(columnProfileScopeKey(1, {}), columnProfileScopeKey(1, {}));
+  assert.notEqual(columnProfileScopeKey(1, {}), columnProfileScopeKey(2, {}));
+  assert.notEqual(
+    columnProfileScopeKey(1, {}),
+    columnProfileScopeKey(1, { Status: ["N/A"] }),
+  );
+});
+
+test("a profile column action switches to Formal Terms with only that column selected", async () => {
+  const { ColumnProfileView } = await viteServer.ssrLoadModule(
+    "/src/ColumnProfilePanel.tsx",
+  );
+  const { parseColumnProfileJobStatus } = await viteServer.ssrLoadModule(
+    "/src/dataAnalysisApi.ts",
+  );
+  const { columnProfileScopeKey } = await viteServer.ssrLoadModule(
+    "/src/columnProfileScope.ts",
+  );
+  const { profileColumnSelectionOutcome } = await viteServer.ssrLoadModule(
+    "/src/formalTermsSelection.ts",
+  );
+  const scope = columnProfileScopeKey(1, {});
+  const columnNames = ["Status", "All missing"];
+  let activeMode = "column_profile";
+  let selectedColumns = ["Status", "All missing"];
+  let profileStarts = 0;
+  const view = ColumnProfileView({
+    state: {
+      kind: "job",
+      job: parseColumnProfileJobStatus(successfulColumnProfileStatus()),
+    },
+    canceling: false,
+    onBuildProfile: () => {
+      profileStarts += 1;
+    },
+    onCancelProfile: () => {},
+    onFormalTermsRequested: (columnName) => {
+      const outcome = profileColumnSelectionOutcome(scope, columnNames, {
+        scope,
+        columnName,
+      });
+      if (outcome === "selected") {
+        selectedColumns = [columnName];
+      }
+      if (outcome === "selected" || outcome === "column_unavailable") {
+        activeMode = "formal_terms";
+      }
+    },
+  });
+  const action = collectElements(
+    view,
+    (element) => element.type === "button" && element.props["aria-label"] === "Open Formal Terms for Status",
+  )[0];
+
+  assert.ok(action);
+  action.props.onClick();
+
+  assert.equal(activeMode, "formal_terms");
+  assert.deepEqual(selectedColumns, ["Status"]);
+  assert.equal(profileStarts, 0);
+});
+
+test("Formal Terms profile handoffs reject stale scopes and missing columns", async () => {
+  const { columnProfileScopeKey } = await viteServer.ssrLoadModule(
+    "/src/columnProfileScope.ts",
+  );
+  const { profileColumnSelectionOutcome } = await viteServer.ssrLoadModule(
+    "/src/formalTermsSelection.ts",
+  );
+  const currentScope = columnProfileScopeKey(2, { Status: ["N/A"] });
+  const staleScope = columnProfileScopeKey(1, { Status: ["N/A"] });
+
+  assert.equal(
+    profileColumnSelectionOutcome(currentScope, ["Status"], {
+      scope: staleScope,
+      columnName: "Status",
+    }),
+    "stale_scope",
+  );
+  assert.equal(
+    profileColumnSelectionOutcome(currentScope, ["Status"], {
+      scope: currentScope,
+      columnName: "Missing",
+    }),
+    "column_unavailable",
+  );
 });
 
 test("the shared dataset context keeps file, worksheet, and Missing Value controls together", async () => {
@@ -630,6 +978,130 @@ test("data-analysis CSV exports preserve column mode and row filters", async () 
     assert.equal(requestUrl.searchParams.get("column_index"), "2");
     assert.equal(requestUrl.searchParams.get("column_mode"), "analysis");
     assert.equal(requestUrl.searchParams.get("filters"), JSON.stringify(filters));
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("column profile responses parse into camel-case counts with denominator kinds", async () => {
+  const { parseColumnProfileJobStatus, presentValuesMetricShare } = await viteServer.ssrLoadModule(
+    "/src/dataAnalysisApi.ts",
+  );
+  const profile = parseColumnProfileJobStatus(successfulColumnProfileStatus());
+
+  assert.equal(profile.analysisKind, "column_profile");
+  assert.equal(profile.jobId, "profile-job-1");
+  assert.deepEqual(profile.progress, { itemsDone: 2, itemsTotal: 2 });
+  assert.deepEqual(profile.result.columns[0], {
+    name: "Status",
+    present: {
+      count: 3,
+      denominator: 4,
+      denominatorKind: "input_rows",
+    },
+    missing: {
+      count: 1,
+      denominator: 4,
+      denominatorKind: "input_rows",
+    },
+    distinctTerms: {
+      count: 2,
+      denominator: 3,
+      denominatorKind: "present_values",
+    },
+  });
+  assert.equal(presentValuesMetricShare(profile.result.columns[1].distinctTerms), null);
+});
+
+test("column profile boundary rejects invalid states, denominators, and extra term data", async () => {
+  const { parseColumnProfileJobStatus, DataAnalysisRequestError } =
+    await viteServer.ssrLoadModule("/src/dataAnalysisApi.ts");
+  const invalidDenominatorKind = structuredClone(successfulColumnProfileStatus());
+  invalidDenominatorKind.result.columns[0].distinct_terms.denominator_kind = "input_rows";
+  const invalidShareDenominator = structuredClone(successfulColumnProfileStatus());
+  invalidShareDenominator.result.columns[0].distinct_terms.denominator = 4;
+  const invalidState = {
+    ...successfulColumnProfileStatus(),
+    state: "running",
+  };
+  const extraTermData = structuredClone(successfulColumnProfileStatus());
+  extraTermData.result.columns[0].terms = [{ value: "secret", count: 1 }];
+
+  for (const payload of [
+    invalidDenominatorKind,
+    invalidShareDenominator,
+    invalidState,
+    extraTermData,
+  ]) {
+    assert.throws(
+      () => parseColumnProfileJobStatus(payload),
+      (error) => error instanceof DataAnalysisRequestError && /invalid column profile/i.test(error.message),
+    );
+  }
+});
+
+test("column profile start sends the file, applied markers, and optional worksheet", async () => {
+  const { startColumnProfileJob } = await viteServer.ssrLoadModule(
+    "/src/dataAnalysisApi.ts",
+  );
+  const previousFetch = globalThis.fetch;
+  let requestUrl = "";
+  let requestOptions;
+  globalThis.fetch = async (url, options) => {
+    requestUrl = url;
+    requestOptions = options;
+    return { ok: true, json: async () => successfulColumnProfileStatus() };
+  };
+
+  try {
+    const status = await startColumnProfileJob(
+      new File(["Status\nActive\n"], "customers.csv", { type: "text/csv" }),
+      "Customers",
+      { Status: ["N/A"] },
+    );
+    const formData = requestOptions.body;
+
+    assert.equal(requestUrl, "/api/column-profile-jobs");
+    assert.equal(requestOptions.method, "POST");
+    assert.equal(formData.get("file").name, "customers.csv");
+    assert.equal(formData.get("sheet"), "Customers");
+    assert.equal(formData.get("missing_markers"), JSON.stringify({ Status: ["N/A"] }));
+    assert.equal(status.result.inputRows, 4);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("column profile polling and cancellation use their dedicated job routes", async () => {
+  const { cancelColumnProfileJob, fetchColumnProfileJobStatus } =
+    await viteServer.ssrLoadModule("/src/dataAnalysisApi.ts");
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  const signal = new AbortController().signal;
+  const cancelledStatus = {
+    ...successfulColumnProfileStatus(),
+    state: "cancelled",
+    progress: { items_done: 1, items_total: 2 },
+    result: null,
+  };
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return {
+      ok: true,
+      json: async () => (url.includes("/cancel") ? cancelledStatus : successfulColumnProfileStatus()),
+    };
+  };
+
+  try {
+    const status = await fetchColumnProfileJobStatus("profile/one", signal);
+    const cancelled = await cancelColumnProfileJob("profile/one");
+
+    assert.equal(new URL(requests[0].url, "http://localhost").pathname, "/api/column-profile-jobs/profile%2Fone");
+    assert.equal(requests[0].options.signal, signal);
+    assert.equal(new URL(requests[1].url, "http://localhost").pathname, "/api/column-profile-jobs/profile%2Fone/cancel");
+    assert.equal(requests[1].options.method, "POST");
+    assert.equal(status.state, "succeeded");
+    assert.equal(cancelled.state, "cancelled");
   } finally {
     globalThis.fetch = previousFetch;
   }

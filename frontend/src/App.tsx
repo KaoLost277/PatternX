@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { AnalysisModeTabs } from "./AnalysisModeTabs";
+import type { AnalysisModeId } from "./AnalysisModeTabs";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { ColumnVisibilityPicker } from "./ColumnVisibilityPicker";
 import { PatternRowsDialog } from "./PatternRowsDialog";
 import type { RowColumnMode } from "./rowColumnMode";
 import { PatternStatusLabel } from "./PatternPreview";
 import { DataAnalysisPanel } from "./DataAnalysisPanel";
+import { ColumnProfilePanel } from "./ColumnProfilePanel";
+import { columnProfileScopeKey } from "./columnProfileScope";
+import type { FormalTermsSelectionHandle } from "./formalTermsSelection";
 import { DataContractPanel } from "./DataContractPanel";
 import { cancelDataAnalysisJob, cancelDataContractJob } from "./dataAnalysisApi";
 import type { DataAnalysisJobStatus, DataAnalysisKind } from "./dataAnalysisApi";
@@ -228,12 +232,7 @@ type AppSectionId =
   | "columnCompleteness"
   | "analysisSetup"
   | "patternResults";
-type ActiveAnalysisMode =
-  | "choose"
-  | "completeness"
-  | "formal_terms"
-  | "group_data"
-  | "data_contract";
+type ActiveAnalysisMode = "choose" | AnalysisModeId;
 type ColumnCompletenessSortKey = "name" | "present_count" | "missing_count";
 type PatternSortKey = "count" | "share" | `status:${number}`;
 
@@ -245,7 +244,8 @@ function expandedSectionsByDefault(): Record<AppSectionId, boolean> {
   };
 }
 
-type AnalysisNoticeMode = Exclude<ActiveAnalysisMode, "choose">;
+type AnalysisNoticeMode = Exclude<ActiveAnalysisMode, "choose" | "column_profile">;
+type ProfileMode = Exclude<ActiveAnalysisMode, "choose">;
 
 interface AnalysisNotice {
   jobId: string;
@@ -263,7 +263,7 @@ interface SharedAnalysisJob {
   cancelable: boolean;
 }
 
-function analysisModeLabel(mode: AnalysisNoticeMode): string {
+function analysisModeLabel(mode: ProfileMode): string {
   if (mode === "completeness") {
     return "Completeness Patterns";
   }
@@ -272,6 +272,9 @@ function analysisModeLabel(mode: AnalysisNoticeMode): string {
   }
   if (mode === "group_data") {
     return "Group Data";
+  }
+  if (mode === "column_profile") {
+    return "Column Profile";
   }
   return "Data Contracts";
 }
@@ -426,6 +429,10 @@ function App() {
   );
   const [activeAnalysisMode, setActiveAnalysisMode] = useState<ActiveAnalysisMode>("choose");
   const [datasetVersion, setDatasetVersion] = useState<number>(0);
+  const columnProfileScope = columnProfileScopeKey(
+    datasetVersion,
+    appliedMissingValueMarkers,
+  );
   const [dataAnalysisJobs, setDataAnalysisJobs] = useState<
     Record<DataAnalysisKind, DataAnalysisJobStatus | null>
   >({ formal_terms: null, group_data: null, data_contract: null });
@@ -444,6 +451,7 @@ function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestNumber = useRef(0);
+  const formalTermsSelectionRef = useRef<FormalTermsSelectionHandle | null>(null);
 
   function beginRequest(): number {
     requestNumber.current = requestNumber.current + 1;
@@ -574,6 +582,16 @@ function App() {
     window.scrollTo({ top: 0, behavior: scrollBehavior });
     if (mode !== "completeness") {
       handlePatternPreviewClosed();
+    }
+  }
+
+  function handleProfileFormalTermsRequested(columnName: string) {
+    const outcome = formalTermsSelectionRef.current?.selectProfileColumn({
+      scope: columnProfileScope,
+      columnName,
+    });
+    if (outcome === "selected" || outcome === "column_unavailable") {
+      handleAnalysisModeSelected("formal_terms");
     }
   }
 
@@ -2027,6 +2045,25 @@ function App() {
         </div>
 
         <div
+          id="analysis-panel-column_profile"
+          role="tabpanel"
+          aria-labelledby="analysis-tab-column_profile"
+          tabIndex={0}
+          hidden={activeAnalysisMode !== "column_profile"}
+        >
+          {selectedFile !== null && columnNames.length > 0 && (
+            <ColumnProfilePanel
+              key={columnProfileScope}
+              selectedFile={selectedFile}
+              worksheetName={selectedSheet}
+              missingValueMarkers={appliedMissingValueMarkers}
+              hidden={activeAnalysisMode !== "column_profile"}
+              onFormalTermsRequested={handleProfileFormalTermsRequested}
+            />
+          )}
+        </div>
+
+        <div
           id="analysis-panel-formal_terms"
           role="tabpanel"
           aria-labelledby="analysis-tab-formal_terms"
@@ -2035,8 +2072,10 @@ function App() {
         >
           {selectedFile !== null && columnNames.length > 0 && (
             <DataAnalysisPanel
-              key={`formal-terms-${datasetVersion}-${JSON.stringify(appliedMissingValueMarkers)}`}
+              key={`formal-terms-${columnProfileScope}`}
+              ref={formalTermsSelectionRef}
               analysisKind="formal_terms"
+              selectionScope={columnProfileScope}
               selectedFile={selectedFile}
               worksheetName={selectedSheet}
               columnNames={columnNames}
