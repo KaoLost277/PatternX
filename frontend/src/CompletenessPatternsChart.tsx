@@ -24,7 +24,10 @@ export function CompletenessPatternsChart({
       label: `Pattern ${patternNumber}${statusDescription.length > 0 ? ` · ${statusDescription}` : ""}`,
       count: pattern.count,
       share: pattern.share,
-      detailLabel: `Completeness Pattern ${patternNumber}`,
+      detailLabel:
+        statusDescription.length > 0
+          ? `Completeness Pattern ${patternNumber}: ${statusDescription}`
+          : `Completeness Pattern ${patternNumber}`,
     };
   });
 

@@ -86,6 +86,7 @@ test("frequency chart ranks the exact Top 10 and keeps counts and shares visible
   assert.match(markup, /12 Input Rows/);
   assert.match(markup, /40% of all Input Rows/);
   assert.match(markup, /aria-label="View Input Rows for pattern 1/);
+  assert.match(markup, /<button type="button"[^>]*aria-label="View Input Rows/);
   assert.match(markup, /active:bg-surface-accent/);
   assert.match(markup, /focus-visible:outline-focus-ring/);
 });
@@ -139,6 +140,34 @@ test("frequency chart explains an empty result without drawing a zero category",
   assert.doesNotMatch(markup, /<li|Other/);
 });
 
+test("frequency chart selections are native keyboard-activatable buttons", async () => {
+  const { FrequencyBarChart } = await viteServer.ssrLoadModule(
+    "/src/FrequencyBarChart.tsx",
+  );
+  const markup = renderToStaticMarkup(
+    React.createElement(FrequencyBarChart, {
+      title: "Most common terms",
+      categoryName: "Formal Terms",
+      denominatorDescription: "of Input Rows",
+      items: [
+        {
+          key: "term-0",
+          sourceIndex: 0,
+          label: "Approved",
+          count: 2,
+          share: 1,
+          detailLabel: 'the term "Approved"',
+        },
+      ],
+      onSelect: () => {},
+    }),
+  );
+
+  assert.match(markup, /<button type="button"[^>]*aria-label="View Input Rows/);
+  assert.match(markup, /focus-visible:outline-3/);
+  assert.doesNotMatch(markup, /role="button"|tabindex="-1"/);
+});
+
 test("Completeness Patterns chart labels statuses and ranks the complete result", async () => {
   const { CompletenessPatternsChart } = await viteServer.ssrLoadModule(
     "/src/CompletenessPatternsChart.tsx",
@@ -164,6 +193,10 @@ test("Completeness Patterns chart labels statuses and ranks the complete result"
   assert.match(markup, /Most common Completeness Patterns/);
   assert.match(markup, /email: present, phone: missing/);
   assert.match(markup, /email: missing, phone: missing/);
+  assert.match(
+    markup,
+    /aria-label="View Input Rows for Completeness Pattern 1: email: present, phone: missing/,
+  );
   assert.match(markup, /Showing the top 10 of 12 Completeness Patterns/);
   assert.doesNotMatch(markup, /Pattern 11|Pattern 12|Other/);
 });
