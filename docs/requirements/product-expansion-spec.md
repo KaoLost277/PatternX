@@ -1,6 +1,6 @@
 # Product expansion specification
 
-**Status:** Phases 1 and 2 are implemented and verified. Later phases remain proposed.
+**Status:** Phases 1, 2, and 3 are implemented and verified. Later phases remain proposed.
 **Roadmap:** [PatternX Product Expansion Roadmap](../roadmaps/product-expansion.md)
 **Research:** [Product expansion research and sources](../research/patternx-product-expansion.md)
 
@@ -8,7 +8,7 @@
 
 PatternX already reports Completeness Patterns, Formal Terms, and Group Data. This specification defines how users can turn those reports into repeatable, user-defined checks, compare aggregate profiles, and inspect selected data characteristics while keeping source data local.
 
-The proposed work serves users who inspect recurring CSV or XLSX extracts and need to know whether files meet explicit expectations or changed since an earlier extract. PatternX remains a local, offline, single-user application. Phase 1 is implemented; later phases remain proposals.
+The proposed work serves users who inspect recurring CSV or XLSX extracts and need to know whether files meet explicit expectations or changed since an earlier extract. PatternX remains a local, offline, single-user application. Phases 1, 2, and 3 are implemented; later phases remain proposals.
 
 ## Current behavior
 
@@ -148,6 +148,16 @@ Contract jobs delete their SQLite database after they produce aggregate results 
 - Every overview metric reconciles with the existing Completeness and Formal Terms results for the same import and Missing Value rules.
 - The interface distinguishes observed statistics from user-defined contract results.
 - Long-running profile work reports progress, supports cancellation, and cleans up temporary data.
+
+#### Phase 3 design decision
+
+`ColumnProfileSummary` contains the Input Row total and one `ColumnProfile` per source column in source order. Each column reports present and missing counts and shares over all Input Rows. It reports the distinct non-missing Formal Term count and the ratio of that count to present values. A column with no present values has no distinct-term share. The Missing Value bucket in Formal Terms results is not a Formal Term. Existing per-term occurrence shares remain counts divided by all Input Rows. A file with no Input Rows follows the existing `NoInputRowsError` behavior.
+
+The profile is an aggregate-only managed job with its own start, status, and cancel routes and job store. It reuses the managed worker lifecycle but deletes the full job directory after completion. It does not retain row data, exact Formal Term values, or Structural Format Patterns. One SQLite aggregate query per source column computes the counts. Progress advances by completed columns, and cancellation interrupts the active query. The explicit **Build profile** action starts the job. Each column sends a scope-checked selection command to the mounted Formal Terms panel. The event-driven command changes only the selected column; it does not start a job, clear the current result, or use an effect to synchronize state. A request from an old dataset or Missing Value scope has no effect. The existing result remains available until the user starts the new selection.
+
+The design uses a separate profile job instead of adding a branch to the row-detail Formal Terms and Group Data job. The profile does not need their retained SQLite data. It also avoids joining the separate Completeness and Formal Terms results in the browser, where two uploads could use different files or Missing Value rules. The profile result stores no term arrays, so high-cardinality output does not add a list of source values to the response. No performance limit is claimed without a representative high-cardinality benchmark.
+
+The architecture comparison chose a separate aggregate job and store. It adopted one SQLite aggregate query per column and explicit populated, loading, empty, and error states. It rejected adding a profile branch to the row-detail job route and store because those jobs retain SQLite for row access while the profile does not.
 
 ### Phase 4. User-managed aggregate Profile Snapshots
 

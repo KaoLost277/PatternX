@@ -10,10 +10,13 @@ product language and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
 You can import a CSV file or one chosen worksheet of an XLSX workbook and see the Column Completeness
 Summary: for every column, the exact count and share of Input Rows with a present value. Null, empty,
 and whitespace-only values are missing by default, additional missing value markers can be configured
-per column, and zero counts as present. The Completeness Patterns analysis groups rows by the selected
-columns' present and missing statuses. The Formal Terms analysis reports exact distinct terms and
-repeated structural formats. The Group Data analysis reports observed exact value combinations, their
-counts and shares, and a uniqueness summary for the selected Group Data Keys. Completeness Patterns,
+per column, and zero counts as present. Column Profile combines present and missing counts with
+distinct non-missing Formal Term counts for every column. It reports present and missing shares of
+Input Rows and distinct-term shares of present values. It does not infer data types or show Data
+Contract results. The Completeness Patterns analysis groups rows by the selected columns' present and
+missing statuses. The Formal Terms analysis reports exact distinct terms and repeated structural
+formats. The Group Data analysis reports observed exact value combinations, their counts and shares,
+and a uniqueness summary for the selected Group Data Keys. Completeness Patterns, Column Profile,
 Formal Terms, Group Data, and Data Contracts run as background jobs. The app reports progress, elapsed
 time, and cancellation for each job. Completeness Patterns provides the aggregate downloads
 `column_completeness.csv` and `pattern_summary.csv`. Users can also open row details for a pattern,
@@ -74,7 +77,7 @@ limit is counted to its full 1,048,575 data rows. CSV files have no such workshe
 
 ## Analysis jobs
 
-Completeness Patterns, Formal Terms, Group Data, and Data Contracts run as background jobs. While one runs, the app
+Completeness Patterns, Column Profile, Formal Terms, Group Data, and Data Contracts run as background jobs. While one runs, the app
 reports its stage, elapsed time, and progress, and the user can cancel it. Cancelling removes the
 job's working data.
 
@@ -97,8 +100,8 @@ The latest successful Completeness Patterns, Formal Terms, or Group Data job may
 SQLite database while the backend runs. The database supports row details and exports. A newer job in
 the same mode, a newly accepted dataset import, changed Missing Value rules, graceful backend shutdown,
 or startup cleanup removes retained databases. Raw uploads and normalized worksheet copies are removed
-when analysis finishes. Data Contract jobs delete their SQLite database after computing aggregate
-results because they do not provide row details.
+when analysis finishes. Column Profile and Data Contract jobs delete their SQLite databases after
+computing aggregate results because they do not provide row details.
 
 ## Exports
 

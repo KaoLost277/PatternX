@@ -15,11 +15,12 @@ This file records the current product foundation. The original application-build
 
 - Import CSV files or one selected worksheet from an XLSX workbook.
 - Show present and missing counts and shares for each column.
+- Show the aggregate Column Profile for every source column, including distinct non-missing Formal Term counts and shares.
 - Group selected columns by exact present and missing statuses in Completeness Patterns.
 - Count exact Formal Terms and repeated Structural Format Patterns in selected columns.
 - Group Input Rows by the observed exact value tuples of selected columns in Group Data. Report distinct keys, singleton and repeated keys, Input Rows in repeated-key groups, and singleton-key share of distinct keys.
 - Apply local versioned Data Contracts with `required`, `enum`, `integer`, `number`, and explicit date-format rules. Report aggregate Missing, Pass, and Fail counts for each rule.
-- Run all four analyses as background jobs with progress, elapsed-time reporting, and cancellation.
+- Run all five analyses as background jobs with progress, elapsed-time reporting, and cancellation.
 - Inspect matching Input Rows for patterns, terms, formats, and Group Data Keys. Download matching rows as CSV through explicit row-detail actions.
 - Download `column_completeness.csv` and `pattern_summary.csv` from Completeness Patterns.
 
@@ -31,6 +32,6 @@ The [README](../README.md) describes input handling, analysis jobs, exports, and
 
 ## Proposed product expansion
 
-Phases 1 and 2 are implemented and covered by tests. Phase 1 adds the Group Data Key uniqueness summary without inferring primary keys, merging Input Rows, or labeling repeated groups as duplicate records. Phase 2 adds local user-defined Data Contracts. The next proposed feature is a Unified Column Profile Overview.
+Phases 1, 2, and 3 are implemented and covered by tests. Phase 1 adds the Group Data Key uniqueness summary without inferring primary keys, merging Input Rows, or labeling repeated groups as duplicate records. Phase 2 adds local user-defined Data Contracts. Phase 3 adds the aggregate-only Unified Column Profile Overview. The next proposed feature is user-managed Profile Snapshots.
 
 The complete sequence and requirements are in the [product expansion roadmap](roadmaps/product-expansion.md) and [product expansion specification](requirements/product-expansion-spec.md). Later phases remain proposals.
