@@ -18,6 +18,7 @@ from app.analysis_jobs import (
 )
 from app.completeness import UNREADABLE_CSV_MESSAGE, sqlite_column_name
 from app.data_analyses import (
+    ColumnProfileSummary,
     DataAnalysisInputs,
     DataAnalysisSummary,
     DataFormatPattern,
@@ -79,7 +80,7 @@ class DataAnalysisJobStatus:
     stage: str | None
     elapsed_seconds: float
     progress: DataAnalysisProgress | None
-    result: DataAnalysisSummary | ContractSummary | None
+    result: DataAnalysisSummary | ContractSummary | ColumnProfileSummary | None
     error: str | None
 
 
@@ -152,7 +153,7 @@ class ManagedDataAnalysisJob(ABC):
         self.state = JOB_STATE_RUNNING
         self.stage: str | None = "Loading Input Rows into the local analysis database"
         self.progress: DataAnalysisProgress | None = None
-        self.result: DataAnalysisSummary | ContractSummary | None = None
+        self.result: DataAnalysisSummary | ContractSummary | ColumnProfileSummary | None = None
         self.error: str | None = None
 
         self.started_at = time.monotonic()
@@ -218,7 +219,7 @@ class ManagedDataAnalysisJob(ABC):
     def compute_summary(
         self,
         connection: sqlite3.Connection,
-    ) -> DataAnalysisSummary | ContractSummary:
+    ) -> DataAnalysisSummary | ContractSummary | ColumnProfileSummary:
         raise NotImplementedError
 
     @abstractmethod
@@ -228,7 +229,7 @@ class ManagedDataAnalysisJob(ABC):
     def _run_analysis(self) -> None:
         connection: sqlite3.Connection | None = None
         final_state = JOB_STATE_FAILED
-        result: DataAnalysisSummary | ContractSummary | None = None
+        result: DataAnalysisSummary | ContractSummary | ColumnProfileSummary | None = None
         error: str | None = None
 
         try:
@@ -289,7 +290,7 @@ class ManagedDataAnalysisJob(ABC):
     def _finish(
         self,
         state: str,
-        result: DataAnalysisSummary | ContractSummary | None,
+        result: DataAnalysisSummary | ContractSummary | ColumnProfileSummary | None,
         error: str | None,
     ) -> None:
         with self._lock:

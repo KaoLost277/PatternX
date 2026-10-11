@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { FormEvent, Ref } from "react";
 import {
   DataAnalysisRequestError,
   downloadDataAnalysisRowsCsv,
@@ -26,6 +33,12 @@ import type { RowColumnMode } from "./rowColumnMode";
 import type { RowColumnFilters } from "./rowFilters";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { formatShare } from "./displayFormat";
+import type { ColumnProfileScopeKey } from "./columnProfileScope";
+import {
+  profileColumnSelectionOutcome,
+  type FormalTermsSelectionHandle,
+  type ProfileColumnSelection,
+} from "./formalTermsSelection";
 import {
   compareNumbers,
   compareNullableText,
@@ -45,8 +58,7 @@ type TermSortKey = "term" | "count" | "share";
 type FormatPatternSortKey = "format" | "occurrences" | "distinctTerms" | "share";
 type GroupDataSortKey = `value:${number}` | "count" | "share";
 
-interface DataAnalysisPanelProps {
-  analysisKind: DataAnalysisPanelKind;
+interface DataAnalysisPanelBaseProps {
   selectedFile: File;
   worksheetName: string;
   columnNames: string[];
@@ -56,6 +68,20 @@ interface DataAnalysisPanelProps {
   onAnalysisStartingChanged: (analysisKind: DataAnalysisKind, starting: boolean) => void;
   onError: (message: string | null) => void;
 }
+
+type DataAnalysisPanelProps = DataAnalysisPanelBaseProps &
+  (
+    | {
+        analysisKind: "formal_terms";
+        selectionScope: ColumnProfileScopeKey;
+        ref?: Ref<FormalTermsSelectionHandle | null>;
+      }
+    | {
+        analysisKind: "group_data";
+        selectionScope?: never;
+        ref?: never;
+      }
+  );
 
 interface SelectedDetail {
   target: DataAnalysisDetailTarget;
@@ -225,6 +251,8 @@ export function DataAnalysisPanel({
   onJobStatusChanged,
   onAnalysisStartingChanged,
   onError,
+  selectionScope,
+  ref,
 }: DataAnalysisPanelProps) {
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [job, setJob] = useState<DataAnalysisJobStatus | null>(null);
@@ -248,6 +276,35 @@ export function DataAnalysisPanel({
   const runningJobId = job?.state === JOB_STATE_RUNNING ? job.job_id : null;
   const requestStarting = statusMessage === "Starting the analysis...";
   const analysisBusy = analysisRunning || requestStarting;
+  const currentSelectionScope = selectionScope ?? null;
+  const formalTermsSelectionRef = analysisKind === "formal_terms" ? ref ?? null : null;
+
+  useImperativeHandle<
+    FormalTermsSelectionHandle | null,
+    FormalTermsSelectionHandle | null
+  >(
+    formalTermsSelectionRef,
+    () => {
+      if (currentSelectionScope === null) {
+        return null;
+      }
+
+      return {
+        selectProfileColumn(command: ProfileColumnSelection) {
+          const outcome = profileColumnSelectionOutcome(
+            currentSelectionScope,
+            columnNames,
+            command,
+          );
+          if (outcome === "selected") {
+            setSelectedColumns([command.columnName]);
+          }
+          return outcome;
+        },
+      };
+    },
+    [columnNames, currentSelectionScope],
+  );
 
   const applyJobStatus = useCallback((nextJob: DataAnalysisJobStatus) => {
     setJob(nextJob);
@@ -516,7 +573,9 @@ export function DataAnalysisPanel({
       <div className="grid min-w-0 gap-4" hidden={hidden}>
         <CollapsibleSection
           title={`${titleForAnalysis(analysisKind)} Setup`}
-          summary={`${selectedColumns.length} columns selected`}
+          summary={`${selectedColumns.length} ${
+            selectedColumns.length === 1 ? "column" : "columns"
+          } selected`}
           open={setupExpanded}
           onOpenChange={setSetupExpanded}
         >
@@ -710,6 +769,7 @@ function FormalColumnResults({
   onDetailOpened,
   onChangeColumns,
 }: FormalColumnResultsProps) {
+  const distinctFormalTermCount = column.terms.filter((term) => term.value !== null).length;
 
   function openTermDetail(sourceIndex: number) {
     const term = column.terms[sourceIndex];
@@ -730,10 +790,16 @@ function FormalColumnResults({
   }
 
   return (
-    <section className="grid min-w-0 gap-4 border-t border-border pt-4" aria-labelledby={`formal-column-${columnIndex}`}>
-      <h4 className="text-base font-semibold" id={`formal-column-${columnIndex}`}>{column.name}</h4>
+    <section
+      className="grid min-w-0 gap-4 border-t border-border pt-4"
+      aria-labelledby={`formal-column-${columnIndex}`}
+    >
+      <h4 className="text-base font-semibold" id={`formal-column-${columnIndex}`}>
+        {column.name}
+      </h4>
       <p className={statusTextClasses}>
-        {column.terms.length.toLocaleString()} distinct terms in {inputRows.toLocaleString()} Input Rows.
+        {distinctFormalTermCount.toLocaleString()} distinct Formal Terms in{" "}
+        {inputRows.toLocaleString()} Input Rows. Missing Values are excluded.
       </p>
 
       <h5 className="text-sm font-semibold text-text-secondary">Terms</h5>

@@ -1,6 +1,6 @@
 # PatternX Product Expansion Roadmap
 
-**Status:** Phases 1 and 2 are implemented and verified in the current working tree. Later phases remain proposals with no delivery dates.
+**Status:** Phases 1, 2, and 3 are implemented and verified in the current working tree. Later phases remain proposals with no delivery dates.
 **Research:** [Product expansion research and sources](../research/patternx-product-expansion.md)
 
 This roadmap collects the extension ideas considered for PatternX and places them in a suggested order. Reprioritize after choosing the users and workflows the next release should serve.
@@ -66,12 +66,16 @@ The root [README](../../README.md) and [initial roadmap](../ROADMAP.md) describe
 
 ### Phase 3 — Unified column profile overview
 
+**Status:** Implemented.
+
 **Goal:** Give users one starting point for deciding which existing analysis to run next.
 
 - Combine present/missing counts with distinct Formal Term counts and shares.
 - Optionally show top Formal Terms and repeated Structural Format Patterns, with links into the existing detailed analyses.
 - Keep this view descriptive. Defer automatic type inference; values that look numeric may be identifiers or codes.
 - Measure memory and runtime when a column has very high Formal Term cardinality before promising workload limits.
+
+The overview reports counts only. It omits term values and repeated Structural Format Patterns. Users can select a column to continue in the existing Formal Terms analysis. The profile starts only when the user selects **Build profile**.
 
 **Exit criteria:** Overview metrics match the existing summaries and are clearly distinguished from inferred or user-defined checks.
 

@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.completeness import sqlite_column_name
-from app.data_analyses import DataAnalysisSummary, count_data_input_rows
+from app.data_analyses import (
+    ColumnProfileSummary,
+    DataAnalysisSummary,
+    count_data_input_rows,
+)
 from app.data_analysis_jobs import ManagedDataAnalysisJob, ManagedDataAnalysisJobStore
 from app.data_contracts import ContractEvaluator, ContractSummary, ResolvedContract
 from app.patterns import raise_if_cancelled
@@ -82,7 +86,7 @@ class DataContractJob(ManagedDataAnalysisJob):
     def _finish(
         self,
         state: str,
-        result: DataAnalysisSummary | ContractSummary | None,
+        result: DataAnalysisSummary | ContractSummary | ColumnProfileSummary | None,
         error: str | None,
     ) -> None:
         self.resolved_contract = None
