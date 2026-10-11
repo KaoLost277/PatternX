@@ -366,7 +366,7 @@ def test_data_analysis_jobs_are_retained_per_mode_and_cleared_on_new_import(tmp_
     assert_no_working_files_left(work_directory)
 
 
-def test_changed_missing_rules_clear_every_mode_row_database(tmp_path):
+def test_changed_missing_rules_clear_data_analysis_jobs_and_replace_column_status_database(tmp_path):
     work_directory = tmp_path / "work"
     client = make_test_client(work_directory)
     csv_bytes = b"department,status\nIT,Approved\nIT,N/A\n"
@@ -395,7 +395,11 @@ def test_changed_missing_rules_clear_every_mode_row_database(tmp_path):
     assert completeness_response.status_code == 200
     assert client.get(f"/api/data-analysis-jobs/{formal_status['job_id']}").status_code == 404
     assert client.get(f"/api/data-analysis-jobs/{group_status['job_id']}").status_code == 404
-    assert_no_working_files_left(work_directory)
+    column_job_id = completeness_response.json()["job_id"]
+    retained_directories = list((work_directory / "uploads").iterdir())
+    assert len(retained_directories) == 1
+    assert retained_directories[0].name == f"job-{column_job_id}"
+    assert [path.name for path in retained_directories[0].iterdir()] == ["analysis.sqlite3"]
 
 
 def test_data_analysis_rejects_invalid_columns_and_cleans_temporary_uploads(tmp_path):

@@ -1,0 +1,153 @@
+import { useState } from "react";
+import { formatShare } from "./displayFormat";
+import { hintTextClasses, statusTextClasses } from "./uiClasses";
+
+export interface ColumnCompleteness {
+  name: string;
+  present_count: number;
+  present_share: number;
+  missing_count: number;
+  missing_share: number;
+}
+
+type ColumnOrder = "missing" | "present" | "source";
+type ColumnStatus = "present" | "missing";
+
+interface ColumnCompletenessChartProps {
+  columns: readonly ColumnCompleteness[];
+  inputRows: number;
+  onStatusSelected: (columnIndex: number, status: ColumnStatus) => void;
+}
+
+interface IndexedColumn {
+  column: ColumnCompleteness;
+  sourceIndex: number;
+}
+
+function compareColumns(order: ColumnOrder, left: IndexedColumn, right: IndexedColumn): number {
+  if (order === "source") {
+    return left.sourceIndex - right.sourceIndex;
+  }
+
+  const leftShare = order === "missing" ? left.column.missing_share : left.column.present_share;
+  const rightShare = order === "missing" ? right.column.missing_share : right.column.present_share;
+  const shareDifference = rightShare - leftShare;
+  return shareDifference === 0 ? left.sourceIndex - right.sourceIndex : shareDifference;
+}
+
+function formatCount(count: number): string {
+  return count.toLocaleString();
+}
+
+export function ColumnCompletenessChart({
+  columns,
+  inputRows,
+  onStatusSelected,
+}: ColumnCompletenessChartProps) {
+  const [columnOrder, setColumnOrder] = useState<ColumnOrder>("missing");
+  const orderedColumns = columns
+    .map((column, sourceIndex) => ({ column, sourceIndex }))
+    .sort((left, right) => compareColumns(columnOrder, left, right));
+
+  function renderStatusSegment(
+    column: ColumnCompleteness,
+    columnIndex: number,
+    status: ColumnStatus,
+  ) {
+    const isPresent = status === "present";
+    const count = isPresent ? column.present_count : column.missing_count;
+    const share = isPresent ? column.present_share : column.missing_share;
+    const segmentLabel = isPresent ? "present values" : "missing values";
+    const accessibleLabel =
+      `View Input Rows with ${segmentLabel} in ${column.name}. ` +
+      `${formatCount(count)} Input Rows, ${formatShare(share)} of all Input Rows.`;
+
+    return (
+      <button
+        type="button"
+        className={[
+          "min-h-10 min-w-10 shrink-0 border-y border-transparent",
+          isPresent ? "bg-accent" : "bg-text-muted",
+          "focus-visible:z-10 focus-visible:outline-3 focus-visible:outline-offset-[-3px]",
+          "focus-visible:outline-focus-ring disabled:cursor-default",
+        ].join(" ")}
+        style={{
+          width: `${Math.max(0, Math.min(share, 1)) * 100}%`,
+          minWidth: count === 0 ? 0 : "2.5rem",
+        }}
+        aria-label={accessibleLabel}
+        title={accessibleLabel}
+        disabled={count === 0}
+        onClick={() => onStatusSelected(columnIndex, status)}
+      >
+        <span className="sr-only">{accessibleLabel}</span>
+      </button>
+    );
+  }
+
+  return (
+    <section className="grid min-w-0 gap-3" aria-labelledby="column-completeness-chart-heading">
+      <div className="grid min-w-0 gap-2">
+        <div className="grid min-w-0 gap-1">
+          <h3
+            className="m-0 text-base font-semibold text-text"
+            id="column-completeness-chart-heading"
+          >
+            Column Completeness by column
+          </h3>
+          <p className={statusTextClasses}>
+            {formatCount(inputRows)} Input Rows · present and missing shares use all Input Rows.
+          </p>
+        </div>
+        <label className="grid w-full max-w-sm min-w-0 gap-1 text-sm font-medium text-text-secondary">
+          <span>Order columns by</span>
+          <select
+            className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            aria-label="Order columns by"
+            value={columnOrder}
+            onChange={(event) => setColumnOrder(event.target.value as ColumnOrder)}
+          >
+            <option value="missing">Most missing first</option>
+            <option value="present">Most present first</option>
+            <option value="source">Source order</option>
+          </select>
+        </label>
+      </div>
+
+      {columns.length === 0 ? (
+        <p className={hintTextClasses} role="status">
+          No columns are available to chart.
+        </p>
+      ) : (
+        <div
+          className="grid max-h-[min(60vh,40rem)] min-w-0 gap-3 overflow-y-auto overscroll-contain rounded-control border border-border bg-surface p-3"
+          role="region"
+          aria-label="Column Completeness chart. Scroll to view all columns."
+          tabIndex={0}
+        >
+          {orderedColumns.map(({ column, sourceIndex }) => (
+            <div
+              className="grid min-w-0 gap-2 border-b border-border pb-3 last:border-b-0 last:pb-0"
+              key={sourceIndex}
+            >
+              <h4 className="m-0 break-words text-sm font-semibold text-text">{column.name}</h4>
+              <div
+                className="flex min-w-0 overflow-hidden rounded-full bg-surface-muted"
+                role="group"
+                aria-label={`Present and missing Input Rows in ${column.name}`}
+              >
+                {renderStatusSegment(column, sourceIndex, "present")}
+                {renderStatusSegment(column, sourceIndex, "missing")}
+              </div>
+              <p className={statusTextClasses}>
+                Present: {formatCount(column.present_count)} ({formatShare(column.present_share)})
+                {" · "}
+                Missing: {formatCount(column.missing_count)} ({formatShare(column.missing_share)})
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

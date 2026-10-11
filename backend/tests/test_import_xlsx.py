@@ -267,7 +267,11 @@ def test_column_completeness_on_a_sheet_matches_the_same_data_as_csv():
 
     assert workbook_response.status_code == 200
     assert csv_response.status_code == 200
-    assert workbook_response.json() == csv_response.json()
+    workbook_summary = {
+        key: value for key, value in workbook_response.json().items() if key != "job_id"
+    }
+    csv_summary = {key: value for key, value in csv_response.json().items() if key != "job_id"}
+    assert workbook_summary == csv_summary
     assert workbook_response.json()["input_rows"] == 6
 
 

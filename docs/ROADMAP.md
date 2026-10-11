@@ -8,7 +8,7 @@ This file records the current product foundation. The original application-build
 - Null, empty, and whitespace-only values are missing by default. Per-column markers are trimmed and matched without case sensitivity. Zero is present unless configured otherwise.
 - Completeness results describe observed patterns. They do not label patterns as anomalous.
 - PatternX runs for one user on Windows and macOS. The API binds to loopback, and the application makes no external runtime requests.
-- Raw uploads and normalized worksheet files are temporary. The latest successful job per analysis mode may retain a temporary SQLite database for row details. PatternX does not keep permanent row-data history. See [ADR-0001](adr/0001-local-offline-profiler.md) and [ADR-0002](adr/0002-use-python-sqlite-for-local-analysis.md).
+- Raw uploads and normalized worksheet files are temporary. The current successful Column Completeness Summary and latest successful job per analysis mode may retain a temporary SQLite database for row details. PatternX does not keep permanent row-data history. See [ADR-0001](adr/0001-local-offline-profiler.md) and [ADR-0002](adr/0002-use-python-sqlite-for-local-analysis.md).
 - Completeness exports contain aggregate summaries. Row-level CSV exports are separate and require a user action in a row-details view.
 
 ## Implemented product
@@ -19,8 +19,9 @@ This file records the current product foundation. The original application-build
 - Count exact Formal Terms and repeated Structural Format Patterns in selected columns.
 - Group Input Rows by the observed exact value tuples of selected columns in Group Data. Report distinct keys, singleton and repeated keys, Input Rows in repeated-key groups, and singleton-key share of distinct keys.
 - Run the three analyses as background jobs with progress, elapsed-time reporting, and cancellation.
-- Inspect matching Input Rows for patterns, terms, formats, and Group Data Keys. Download matching rows as CSV through explicit row-detail actions.
+- Inspect matching Input Rows for Column Completeness statuses, patterns, terms, formats, and Group Data Keys. Download matching rows as CSV through explicit row-detail actions.
 - Download `column_completeness.csv` and `pattern_summary.csv` from Completeness Patterns.
+- View accessible charts for Column Completeness, Completeness Patterns, Formal Terms, and Group Data. Charts use full exact results, keep complete tables available, and open explicit row details for selected values or statuses.
 
 The [README](../README.md) describes input handling, analysis jobs, exports, and temporary-data lifecycle. The [SQLite benchmark report](benchmarks/sqlite-synthetic-windows.md) records measurements for its specific synthetic completeness workloads. Those measurements do not establish Group Data key-cardinality performance or general performance guarantees.
 
