@@ -3,9 +3,11 @@
 import sqlite3
 import threading
 import time
+from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Generic, TypeVar
 
 from app.analysis_jobs import (
     CANCEL_WAIT_SECONDS,
@@ -27,6 +29,7 @@ from app.data_analyses import (
     register_data_value_functions,
     value_function_name,
 )
+from app.data_contracts import ContractSummary
 from app.patterns import AnalysisCancelledError
 from app.row_details import (
     ColumnMode,
@@ -38,7 +41,12 @@ from app.row_filters import (
     register_row_filter_functions,
     row_filter_conditions,
 )
-from app.sqlite_storage import CSVFileError, CSVImportCancelledError, load_csv_into_database, open_analysis_database
+from app.sqlite_storage import (
+    CSVFileError,
+    CSVImportCancelledError,
+    load_csv_into_database,
+    open_analysis_database,
+)
 from app.workfiles import clean_up_job, clean_up_job_sources
 
 FORMAL_TERMS_KIND = "formal_terms"
@@ -71,7 +79,7 @@ class DataAnalysisJobStatus:
     stage: str | None
     elapsed_seconds: float
     progress: DataAnalysisProgress | None
-    result: DataAnalysisSummary | None
+    result: DataAnalysisSummary | ContractSummary | None
     error: str | None
 
 
@@ -125,24 +133,26 @@ class DataAnalysisRowsExport(Iterator[tuple[str | None, ...]]):
             self._job_lock.release()
 
 
-class DataAnalysisJob:
-    """One asynchronous Formal Terms or Group Data analysis."""
+class ManagedDataAnalysisJob(ABC):
+    """Shared worker lifecycle for aggregate data-analysis jobs."""
 
     def __init__(
         self,
         job_id: str,
         analysis_kind: str,
         job_directory: Path,
-        analysis_inputs: DataAnalysisInputs,
+        analysis_csv_path: Path,
+        database_path: Path,
     ) -> None:
         self.job_id = job_id
         self.analysis_kind = analysis_kind
         self.job_directory = job_directory
-        self.analysis_inputs = analysis_inputs
+        self.analysis_csv_path = analysis_csv_path
+        self.database_path = database_path
         self.state = JOB_STATE_RUNNING
         self.stage: str | None = "Loading Input Rows into the local analysis database"
         self.progress: DataAnalysisProgress | None = None
-        self.result: DataAnalysisSummary | None = None
+        self.result: DataAnalysisSummary | ContractSummary | None = None
         self.error: str | None = None
 
         self.started_at = time.monotonic()
@@ -203,6 +213,111 @@ class DataAnalysisJob:
                 result=self.result,
                 error=self.error,
             )
+
+    @abstractmethod
+    def compute_summary(
+        self,
+        connection: sqlite3.Connection,
+    ) -> DataAnalysisSummary | ContractSummary:
+        raise NotImplementedError
+
+    @abstractmethod
+    def clean_up_successful_job(self) -> None:
+        raise NotImplementedError
+
+    def _run_analysis(self) -> None:
+        connection: sqlite3.Connection | None = None
+        final_state = JOB_STATE_FAILED
+        result: DataAnalysisSummary | ContractSummary | None = None
+        error: str | None = None
+
+        try:
+            connection = open_analysis_database(self.database_path)
+            with self._lock:
+                self._connection = connection
+
+            load_csv_into_database(
+                connection,
+                self.analysis_csv_path,
+                cancellation_check=self.is_cancel_requested,
+            )
+            if self.is_cancel_requested():
+                raise AnalysisCancelledError("The analysis was cancelled.")
+
+            result = self.compute_summary(connection)
+            final_state = JOB_STATE_SUCCEEDED
+        except (AnalysisCancelledError, CSVImportCancelledError):
+            final_state = JOB_STATE_CANCELLED
+        except sqlite3.Error:
+            if self.is_cancel_requested():
+                final_state = JOB_STATE_CANCELLED
+            else:
+                error = UNREADABLE_CSV_MESSAGE
+        except CSVFileError as csv_error:
+            error = str(csv_error)
+        except ValueError as domain_error:
+            error = str(domain_error)
+        except Exception as unexpected_error:
+            error = f"The analysis failed: {unexpected_error}"
+        finally:
+            with self._lock:
+                self._connection = None
+                if connection is not None:
+                    try:
+                        connection.close()
+                    except Exception:
+                        final_state = JOB_STATE_FAILED
+                        result = None
+                        error = "The analysis database could not be closed cleanly."
+
+            try:
+                if final_state == JOB_STATE_SUCCEEDED:
+                    self.clean_up_successful_job()
+                else:
+                    clean_up_job(self.job_directory)
+            except OSError:
+                try:
+                    clean_up_job(self.job_directory)
+                except OSError:
+                    pass
+                final_state = JOB_STATE_FAILED
+                result = None
+                error = "Temporary working files could not be removed."
+
+            self._finish(final_state, result, error)
+
+    def _finish(
+        self,
+        state: str,
+        result: DataAnalysisSummary | ContractSummary | None,
+        error: str | None,
+    ) -> None:
+        with self._lock:
+            self.state = state
+            self.stage = None
+            self.result = result
+            self.error = error
+            self._final_elapsed_seconds = time.monotonic() - self.started_at
+
+
+class DataAnalysisJob(ManagedDataAnalysisJob):
+    """One Formal Terms or Group Data analysis with row-detail access."""
+
+    def __init__(
+        self,
+        job_id: str,
+        analysis_kind: str,
+        job_directory: Path,
+        analysis_inputs: DataAnalysisInputs,
+    ) -> None:
+        self.analysis_inputs = analysis_inputs
+        super().__init__(
+            job_id,
+            analysis_kind,
+            job_directory,
+            analysis_inputs.analysis_csv_path,
+            analysis_inputs.database_path,
+        )
 
     def rows_page(
         self,
@@ -376,109 +491,50 @@ class DataAnalysisJob:
         count_query = f'SELECT count(*) FROM "input_rows" WHERE {where_clause}'
         return query, count_query, parameters, matching_row_count, column_projection
 
-    def _run_analysis(self) -> None:
-        connection: sqlite3.Connection | None = None
-        final_state = JOB_STATE_FAILED
-        result: DataAnalysisSummary | None = None
-        error: str | None = None
-
-        try:
-            connection = open_analysis_database(self.analysis_inputs.database_path)
-            with self._lock:
-                self._connection = connection
-
-            load_csv_into_database(
+    def compute_summary(
+        self,
+        connection: sqlite3.Connection,
+    ) -> DataAnalysisSummary:
+        if self.analysis_kind == FORMAL_TERMS_KIND:
+            self.set_stage("Counting terms and finding structural formats")
+            return compute_formal_terms(
                 connection,
-                self.analysis_inputs.analysis_csv_path,
+                self.analysis_inputs.column_names,
+                self.analysis_inputs.selected_columns,
+                self.analysis_inputs.missing_markers_by_column,
+                progress_reporter=self.report_progress,
                 cancellation_check=self.is_cancel_requested,
             )
-            if self.is_cancel_requested():
-                raise AnalysisCancelledError("The analysis was cancelled.")
 
-            if self.analysis_kind == FORMAL_TERMS_KIND:
-                self.set_stage("Counting terms and finding structural formats")
-                result = compute_formal_terms(
-                    connection,
-                    self.analysis_inputs.column_names,
-                    self.analysis_inputs.selected_columns,
-                    self.analysis_inputs.missing_markers_by_column,
-                    progress_reporter=self.report_progress,
-                    cancellation_check=self.is_cancel_requested,
-                )
-            else:
-                self.set_stage("Grouping Input Rows by selected values")
-                result = compute_group_data(
-                    connection,
-                    self.analysis_inputs.column_names,
-                    self.analysis_inputs.selected_columns,
-                    self.analysis_inputs.missing_markers_by_column,
-                    progress_reporter=self.report_progress,
-                    cancellation_check=self.is_cancel_requested,
-                )
-            final_state = JOB_STATE_SUCCEEDED
-        except (AnalysisCancelledError, CSVImportCancelledError):
-            final_state = JOB_STATE_CANCELLED
-        except sqlite3.Error:
-            if self.is_cancel_requested():
-                final_state = JOB_STATE_CANCELLED
-            else:
-                error = UNREADABLE_CSV_MESSAGE
-        except CSVFileError as csv_error:
-            error = str(csv_error)
-        except ValueError as domain_error:
-            error = str(domain_error)
-        except Exception as unexpected_error:
-            error = f"The analysis failed: {unexpected_error}"
-        finally:
-            with self._lock:
-                self._connection = None
-                if connection is not None:
-                    try:
-                        connection.close()
-                    except Exception:
-                        final_state = JOB_STATE_FAILED
-                        result = None
-                        error = "The analysis database could not be closed cleanly."
+        if self.analysis_kind == GROUP_DATA_KIND:
+            self.set_stage("Grouping Input Rows by selected values")
+            return compute_group_data(
+                connection,
+                self.analysis_inputs.column_names,
+                self.analysis_inputs.selected_columns,
+                self.analysis_inputs.missing_markers_by_column,
+                progress_reporter=self.report_progress,
+                cancellation_check=self.is_cancel_requested,
+            )
 
-            try:
-                if final_state == JOB_STATE_SUCCEEDED:
-                    clean_up_job_sources(self.job_directory)
-                else:
-                    clean_up_job(self.job_directory)
-            except OSError:
-                try:
-                    clean_up_job(self.job_directory)
-                except OSError:
-                    pass
-                final_state = JOB_STATE_FAILED
-                result = None
-                error = "Temporary working files could not be removed."
+        raise ValueError(f"Unsupported data analysis kind: {self.analysis_kind!r}.")
 
-            self._finish(final_state, result, error)
-
-    def _finish(
-        self,
-        state: str,
-        result: DataAnalysisSummary | None,
-        error: str | None,
-    ) -> None:
-        with self._lock:
-            self.state = state
-            self.stage = None
-            self.result = result
-            self.error = error
-            self._final_elapsed_seconds = time.monotonic() - self.started_at
+    def clean_up_successful_job(self) -> None:
+        clean_up_job_sources(self.job_directory)
 
 
-class DataAnalysisJobStore:
-    """Retain one current Formal Terms and one current Group Data job."""
+JobT = TypeVar("JobT", bound=ManagedDataAnalysisJob)
+
+
+class ManagedDataAnalysisJobStore(Generic[JobT]):
+    """Retain one current job per analysis kind."""
 
     def __init__(self) -> None:
-        self._jobs: dict[str, DataAnalysisJob] = {}
+        self._jobs: dict[str, JobT] = {}
         self._latest_job_by_kind: dict[str, str] = {}
         self._lock = threading.Lock()
 
-    def replace_with(self, job: DataAnalysisJob) -> None:
+    def replace_with(self, job: JobT) -> None:
         with self._lock:
             previous_job_id = self._latest_job_by_kind.pop(job.analysis_kind, None)
             previous_job = self._jobs.pop(previous_job_id, None)
@@ -493,11 +549,11 @@ class DataAnalysisJobStore:
             self._jobs[job.job_id] = job
             self._latest_job_by_kind[job.analysis_kind] = job.job_id
 
-    def find(self, job_id: str) -> DataAnalysisJob | None:
+    def find(self, job_id: str) -> JobT | None:
         with self._lock:
             return self._jobs.get(job_id)
 
-    def cancel(self, job_id: str) -> DataAnalysisJob | None:
+    def cancel(self, job_id: str) -> JobT | None:
         job = self.find(job_id)
         if job is not None:
             job.request_cancel()
@@ -518,3 +574,7 @@ class DataAnalysisJobStore:
 
     def shutdown(self) -> None:
         self.clear()
+
+
+class DataAnalysisJobStore(ManagedDataAnalysisJobStore[DataAnalysisJob]):
+    """Retain the current Formal Terms and Group Data jobs."""

@@ -1,6 +1,6 @@
 # PatternX Product Expansion Roadmap
 
-**Status:** Phase 1 is implemented and verified in the current working tree. Later phases remain proposals with no delivery dates.
+**Status:** Phases 1 and 2 are implemented and verified in the current working tree. Later phases remain proposals with no delivery dates.
 **Research:** [Product expansion research and sources](../research/patternx-product-expansion.md)
 
 This roadmap collects the extension ideas considered for PatternX and places them in a suggested order. Reprioritize after choosing the users and workflows the next release should serve.
@@ -16,17 +16,19 @@ This roadmap collects the extension ideas considered for PatternX and places the
 
 ## Current foundation
 
-The application already has three analysis modes: Completeness Patterns, Formal Terms, and Group Data. It supports CSV and a user-selected XLSX worksheet, configurable missing markers, background jobs, and row detail/export flows. See [AnalysisModeTabs.tsx](../../frontend/src/AnalysisModeTabs.tsx), [data_analyses.py](../../backend/app/data_analyses.py), and [the row detail/export requirements](../requirements/pattern-row-details-and-export.md).
+The application has four analysis modes: Completeness Patterns, Formal Terms, Group Data, and Data Contracts. It supports CSV and a user-selected XLSX worksheet, configurable missing markers, background jobs, and row detail/export flows for the first three modes. See [AnalysisModeTabs.tsx](../../frontend/src/AnalysisModeTabs.tsx), [data_analyses.py](../../backend/app/data_analyses.py), and [the row detail/export requirements](../requirements/pattern-row-details-and-export.md).
 
-The root [README](../../README.md) and [initial roadmap](../ROADMAP.md) now describe all three implemented modes. Keep them aligned with the code as features change.
+The root [README](../../README.md) and [initial roadmap](../ROADMAP.md) describe the current modes. Keep them aligned with the code as features change.
 
 ## Proposed roadmap
 
 ### Phase 0 — Align product documentation and contract semantics
 
+**Status:** Complete.
+
 **Goal:** Make the existing product and the next feature's boundaries clear before expanding behavior.
 
-- Update README and the initial roadmap to describe the current three modes and current row-detail/export behavior.
+- Update README and the initial roadmap to describe the implemented analysis modes and current row-detail/export behavior.
 - Start with the uniqueness summary because it reuses the existing Group Data result. Follow with contracts after the rule and Missing Value semantics are settled.
 - Define how a contract rule treats a Missing Value, a value that cannot be parsed, and a value that violates a constraint. Do not silently change current missing-marker semantics.
 - Define the supported subset and versioning approach for a local JSON contract before implementing contract validation. Explain unsupported rules instead of ignoring them.
@@ -35,7 +37,7 @@ The root [README](../../README.md) and [initial roadmap](../ROADMAP.md) now desc
 
 ### Phase 1 — Uniqueness summary for selected columns
 
-**Priority:** Implemented first feature.
+**Status:** Implemented and verified.
 **Goal:** Answer whether selected values or combinations are unique without inferring business meaning.
 
 - For the columns selected in the existing Group Data run, report distinct Group Data Keys, keys occurring once, keys repeated across Input Rows, Input Rows in repeated-key groups, and the share of keys occurring once.
@@ -48,7 +50,7 @@ The root [README](../../README.md) and [initial roadmap](../ROADMAP.md) now desc
 
 ### Phase 2 — User-defined data contracts
 
-**Priority:** Next major feature after the uniqueness summary.
+**Status:** Implemented and verified.
 **Goal:** Let a user describe expectations and check a later file against those expectations without automatically judging the data.
 
 - Create, import, and export a versioned contract JSON file, matched to columns by name.
@@ -56,6 +58,7 @@ The root [README](../../README.md) and [initial roadmap](../ROADMAP.md) now desc
 - Show per-column/rule counts for missing, passing, and failing Input Rows. Clearly explain how these counts relate to the existing Missing Value rules.
 - Keep results aggregate by default. Do not show or export failing row values automatically; existing row detail/export actions remain user-initiated.
 - Warn about and reject unsupported contract features rather than claiming full compatibility with a standard.
+- Use the version 1 format and parser rules in the [product expansion specification](../requirements/product-expansion-spec.md). Contract results remain aggregate-only, and successful contract jobs delete SQLite after computing the summary.
 
 **Exit criteria:** Exact counts on deterministic CSV/XLSX fixtures; contract version and unsupported-rule behavior are tested; no change to existing analysis semantics; cancellation and temporary-data cleanup work on success, failure, and cancellation.
 

@@ -6,7 +6,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.completeness import NoInputRowsError, reject_markers_for_unknown_columns, sqlite_column_name
+from app.completeness import (
+    NormalizedMissingMarkers,
+    NoInputRowsError,
+    is_missing_value,
+    normalize_missing_markers,
+    reject_markers_for_unknown_columns,
+    sqlite_column_name,
+)
 from app.patterns import AnalysisCancelledError, raise_if_cancelled
 from app.sqlite_storage import ANALYSIS_TABLE_NAME
 
@@ -123,14 +130,10 @@ def count_data_input_rows(connection: sqlite3.Connection) -> int:
 
 def normalize_data_value(
     value: str | None,
-    normalized_markers: set[str],
+    normalized_markers: NormalizedMissingMarkers,
 ) -> str | None:
     """Map Missing Values to one key while preserving every other raw string."""
-    if value is None:
-        return None
-
-    marker_comparison_value = value.strip().casefold()
-    if marker_comparison_value == "" or marker_comparison_value in normalized_markers:
+    if is_missing_value(value, normalized_markers):
         return None
 
     return value
@@ -167,20 +170,19 @@ def register_data_value_functions(
     """Register exact-value keys and structural formats for selected columns."""
     reject_markers_for_unknown_columns(column_names, missing_markers_by_column)
     for column_index, column_name in enumerate(column_names):
-        normalized_markers = {
-            marker.strip().casefold()
-            for marker in missing_markers_by_column.get(column_name, [])
-        }
+        normalized_markers = normalize_missing_markers(
+            missing_markers_by_column.get(column_name, [])
+        )
 
         def value_key(
             value: str | None,
-            markers: set[str] = normalized_markers,
+            markers: NormalizedMissingMarkers = normalized_markers,
         ) -> str | None:
             return normalize_data_value(value, markers)
 
         def format_key(
             value: str | None,
-            markers: set[str] = normalized_markers,
+            markers: NormalizedMissingMarkers = normalized_markers,
         ) -> str | None:
             normalized_value = normalize_data_value(value, markers)
             return structural_format_pattern(normalized_value)

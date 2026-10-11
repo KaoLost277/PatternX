@@ -1,6 +1,6 @@
 # Data Completeness Profiling
 
-This project profiles tabular data through three separate views: completeness patterns, formal terms in selected columns, and groups of input rows that share selected values.
+This project profiles tabular data through Completeness Patterns, Formal Terms, and Group Data. It also checks user-defined Data Contracts against named columns.
 
 ## Language
 
@@ -38,3 +38,12 @@ A per-column count and share of input rows with a present value. Users can use i
 
 **Missing Value**:
 A null, empty, or whitespace-only field value by default. Additional markers can be configured per column and are matched after trimming surrounding whitespace without case sensitivity. Zero is a value unless explicitly configured otherwise.
+
+**Data Contract**:
+A versioned local JSON document that contains user-defined rules for named columns. PatternX reports aggregate results for each rule and does not show failing Input Row values.
+
+**Contract Rule**:
+A user-defined `required`, `enum`, or explicitly selected type check applied to one normalized column name. Missing Values are classified before each rule is evaluated.
+
+**Contract Rule Result**:
+The count of Missing Values, passing Input Rows, and failing Input Rows for one contract rule. A missing Input Row also fails a `required` rule, so those two counts overlap.

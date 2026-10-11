@@ -18,7 +18,8 @@ This file records the current product foundation. The original application-build
 - Group selected columns by exact present and missing statuses in Completeness Patterns.
 - Count exact Formal Terms and repeated Structural Format Patterns in selected columns.
 - Group Input Rows by the observed exact value tuples of selected columns in Group Data. Report distinct keys, singleton and repeated keys, Input Rows in repeated-key groups, and singleton-key share of distinct keys.
-- Run the three analyses as background jobs with progress, elapsed-time reporting, and cancellation.
+- Apply local versioned Data Contracts with `required`, `enum`, `integer`, `number`, and explicit date-format rules. Report aggregate Missing, Pass, and Fail counts for each rule.
+- Run all four analyses as background jobs with progress, elapsed-time reporting, and cancellation.
 - Inspect matching Input Rows for patterns, terms, formats, and Group Data Keys. Download matching rows as CSV through explicit row-detail actions.
 - Download `column_completeness.csv` and `pattern_summary.csv` from Completeness Patterns.
 
@@ -30,6 +31,6 @@ The [README](../README.md) describes input handling, analysis jobs, exports, and
 
 ## Proposed product expansion
 
-The next proposed feature is user-defined data contracts. Phase 1, the Group Data Key uniqueness summary, is implemented and covered by tests. It reuses Group Data semantics and does not infer primary keys, merge Input Rows, or label repeated groups as duplicate records.
+Phases 1 and 2 are implemented and covered by tests. Phase 1 adds the Group Data Key uniqueness summary without inferring primary keys, merging Input Rows, or labeling repeated groups as duplicate records. Phase 2 adds local user-defined Data Contracts. The next proposed feature is a Unified Column Profile Overview.
 
 The complete sequence and requirements are in the [product expansion roadmap](roadmaps/product-expansion.md) and [product expansion specification](requirements/product-expansion-spec.md). Later phases remain proposals.

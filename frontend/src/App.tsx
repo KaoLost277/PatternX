@@ -7,7 +7,8 @@ import { PatternRowsDialog } from "./PatternRowsDialog";
 import type { RowColumnMode } from "./rowColumnMode";
 import { PatternStatusLabel } from "./PatternPreview";
 import { DataAnalysisPanel } from "./DataAnalysisPanel";
-import { cancelDataAnalysisJob } from "./dataAnalysisApi";
+import { DataContractPanel } from "./DataContractPanel";
+import { cancelDataAnalysisJob, cancelDataContractJob } from "./dataAnalysisApi";
 import type { DataAnalysisJobStatus, DataAnalysisKind } from "./dataAnalysisApi";
 import { SortableHeader } from "./SortableHeader";
 import type { CompletenessPattern, PatternSummary } from "./PatternPreview";
@@ -227,7 +228,12 @@ type AppSectionId =
   | "columnCompleteness"
   | "analysisSetup"
   | "patternResults";
-type ActiveAnalysisMode = "choose" | "completeness" | "formal_terms" | "group_data";
+type ActiveAnalysisMode =
+  | "choose"
+  | "completeness"
+  | "formal_terms"
+  | "group_data"
+  | "data_contract";
 type ColumnCompletenessSortKey = "name" | "present_count" | "missing_count";
 type PatternSortKey = "count" | "share" | `status:${number}`;
 
@@ -264,7 +270,10 @@ function analysisModeLabel(mode: AnalysisNoticeMode): string {
   if (mode === "formal_terms") {
     return "Formal Terms";
   }
-  return "Group Data";
+  if (mode === "group_data") {
+    return "Group Data";
+  }
+  return "Data Contracts";
 }
 
 function withoutIdentifierColumn(
@@ -419,10 +428,11 @@ function App() {
   const [datasetVersion, setDatasetVersion] = useState<number>(0);
   const [dataAnalysisJobs, setDataAnalysisJobs] = useState<
     Record<DataAnalysisKind, DataAnalysisJobStatus | null>
-  >({ formal_terms: null, group_data: null });
+  >({ formal_terms: null, group_data: null, data_contract: null });
   const dataAnalysisJobsRef = useRef<Record<DataAnalysisKind, DataAnalysisJobStatus | null>>({
     formal_terms: null,
     group_data: null,
+    data_contract: null,
   });
   const [analysisNotices, setAnalysisNotices] = useState<AnalysisNotice[]>([]);
   const [cancelingJobIds, setCancelingJobIds] = useState<Record<string, boolean>>({});
@@ -430,7 +440,7 @@ function App() {
   const [startingCompletenessAnalysis, setStartingCompletenessAnalysis] = useState<boolean>(false);
   const [startingDataAnalyses, setStartingDataAnalyses] = useState<
     Record<DataAnalysisKind, boolean>
-  >({ formal_terms: false, group_data: false });
+  >({ formal_terms: false, group_data: false, data_contract: false });
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestNumber = useRef(0);
@@ -494,6 +504,12 @@ function App() {
   const onGroupDataJobStatusChanged = useCallback(
     (jobStatus: DataAnalysisJobStatus | null) =>
       handleDataAnalysisJobStatusChanged("group_data", jobStatus),
+    [handleDataAnalysisJobStatusChanged],
+  );
+
+  const onDataContractJobStatusChanged = useCallback(
+    (jobStatus: DataAnalysisJobStatus | null) =>
+      handleDataAnalysisJobStatusChanged("data_contract", jobStatus),
     [handleDataAnalysisJobStatusChanged],
   );
 
@@ -624,9 +640,21 @@ function App() {
         setAnalysisJob(null);
         setStartingCompletenessAnalysis(false);
         setPatternSummary(null);
-        dataAnalysisJobsRef.current = { formal_terms: null, group_data: null };
-        setDataAnalysisJobs({ formal_terms: null, group_data: null });
-        setStartingDataAnalyses({ formal_terms: false, group_data: false });
+        dataAnalysisJobsRef.current = {
+          formal_terms: null,
+          group_data: null,
+          data_contract: null,
+        };
+        setDataAnalysisJobs({
+          formal_terms: null,
+          group_data: null,
+          data_contract: null,
+        });
+        setStartingDataAnalyses({
+          formal_terms: false,
+          group_data: false,
+          data_contract: false,
+        });
         setAnalysisNotices([]);
         setCancelingJobIds({});
         setCancelingCompletenessJob(false);
@@ -735,9 +763,21 @@ function App() {
     setPatternSort(null);
     setHiddenAnalysisColumns([]);
     setAnalysisJob(null);
-    dataAnalysisJobsRef.current = { formal_terms: null, group_data: null };
-    setDataAnalysisJobs({ formal_terms: null, group_data: null });
-    setStartingDataAnalyses({ formal_terms: false, group_data: false });
+    dataAnalysisJobsRef.current = {
+      formal_terms: null,
+      group_data: null,
+      data_contract: null,
+    };
+    setDataAnalysisJobs({
+      formal_terms: null,
+      group_data: null,
+      data_contract: null,
+    });
+    setStartingDataAnalyses({
+      formal_terms: false,
+      group_data: false,
+      data_contract: false,
+    });
     setAnalysisNotices([]);
     setCancelingJobIds({});
     setCancelingCompletenessJob(false);
@@ -926,7 +966,10 @@ function App() {
   ) {
     setCancelingJobIds((currentJobs) => ({ ...currentJobs, [jobId]: true }));
     try {
-      const jobStatus = await cancelDataAnalysisJob(jobId);
+      const jobStatus =
+        analysisKind === "data_contract"
+          ? await cancelDataContractJob(jobId)
+          : await cancelDataAnalysisJob(jobId);
       handleDataAnalysisJobStatusChanged(analysisKind, jobStatus);
     } catch (error: unknown) {
       setErrorMessage(
@@ -1258,7 +1301,7 @@ function App() {
     });
   }
 
-  for (const analysisKind of ["formal_terms", "group_data"] as const) {
+  for (const analysisKind of ["formal_terms", "group_data", "data_contract"] as const) {
     const job = dataAnalysisJobs[analysisKind];
     if (job?.state === JOB_STATE_RUNNING) {
       sharedAnalysisJobs.push({
@@ -1272,7 +1315,8 @@ function App() {
             : {
                 itemsDone: job.progress.items_done,
                 itemsTotal: job.progress.items_total,
-                label: analysisKind === "formal_terms" ? "selected values" : "Input Rows",
+                label:
+                  analysisKind === "formal_terms" ? "selected values" : "Input Rows",
               },
         cancelable: true,
       });
@@ -2026,6 +2070,27 @@ function App() {
               onError={setErrorMessage}
             />
           )}
+        </div>
+
+        <div
+          id="analysis-panel-data_contract"
+          role="tabpanel"
+          aria-labelledby="analysis-tab-data_contract"
+          tabIndex={0}
+          hidden={activeAnalysisMode !== "data_contract"}
+        >
+          <DataContractPanel
+            selectedFile={selectedFile}
+            worksheetName={selectedSheet}
+            columnNames={columnNames}
+            missingValueMarkers={appliedMissingValueMarkers}
+            datasetVersion={datasetVersion}
+            jobStatus={dataAnalysisJobs.data_contract}
+            hidden={activeAnalysisMode !== "data_contract"}
+            onJobStatusChanged={onDataContractJobStatusChanged}
+            onAnalysisStartingChanged={handleDataAnalysisStartingChanged}
+            onError={setErrorMessage}
+          />
         </div>
 
         {activeAnalysisMode === "completeness" && patternSummary !== null && selectedPattern !== null && (

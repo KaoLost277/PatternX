@@ -11,6 +11,7 @@ import type {
   DataAnalysisDetailTarget,
   DataAnalysisJobStatus,
   DataAnalysisKind,
+  DataAnalysisPanelKind,
   DataAnalysisRowsPage,
   DataFormatPattern,
   DataGroup,
@@ -45,7 +46,7 @@ type FormatPatternSortKey = "format" | "occurrences" | "distinctTerms" | "share"
 type GroupDataSortKey = `value:${number}` | "count" | "share";
 
 interface DataAnalysisPanelProps {
-  analysisKind: DataAnalysisKind;
+  analysisKind: DataAnalysisPanelKind;
   selectedFile: File;
   worksheetName: string;
   columnNames: string[];
@@ -67,7 +68,7 @@ const JOB_STATE_RUNNING = "running";
 const JOB_STATE_SUCCEEDED = "succeeded";
 const JOB_POLL_INTERVAL_MILLISECONDS = 500;
 
-function titleForAnalysis(analysisKind: DataAnalysisKind): string {
+function titleForAnalysis(analysisKind: DataAnalysisPanelKind): string {
   return analysisKind === "formal_terms" ? "Formal Terms" : "Group Data";
 }
 
@@ -497,13 +498,17 @@ export function DataAnalysisPanel({
   }
 
   const completedSummary =
-    job?.state === JOB_STATE_SUCCEEDED && job.result !== null ? job.result : null;
+    job?.state === JOB_STATE_SUCCEEDED &&
+    job.result !== null &&
+    job.result.kind !== "data_contract"
+      ? job.result
+      : null;
   const formalTermsSummary =
     completedSummary !== null && isFormalTermsSummary(completedSummary)
       ? completedSummary
       : null;
   const groupDataSummary =
-    completedSummary !== null && !isFormalTermsSummary(completedSummary)
+    completedSummary?.kind === "group_data"
       ? completedSummary
       : null;
   return (
@@ -623,10 +628,12 @@ export function DataAnalysisPanel({
           title={detail.title}
           targetDescription={detail.description}
           matchingRowCount={detail.count}
-          analysisColumns={
-            job.state === JOB_STATE_SUCCEEDED && job.result !== null
-              ? job.result.selected_columns
-              : []
+            analysisColumns={
+              job.state === JOB_STATE_SUCCEEDED &&
+              job.result !== null &&
+              job.result.kind !== "data_contract"
+                ? job.result.selected_columns
+                : []
           }
           columnMode={detailColumnMode}
           onColumnModeChange={setDetailColumnMode}

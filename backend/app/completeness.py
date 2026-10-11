@@ -8,8 +8,10 @@ into a wrong column layout.
 
 import json
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NewType
 
 from app.sqlite_storage import (
     ANALYSIS_COLUMN_PREFIX,
@@ -25,6 +27,7 @@ MISSING_MARKERS_RULES_MESSAGE = (
 )
 
 UNREADABLE_CSV_MESSAGE = "The uploaded file could not be read as a CSV file."
+NormalizedMissingMarkers = NewType("NormalizedMissingMarkers", frozenset[str])
 
 
 class MissingValueMarkersError(ValueError):
@@ -33,6 +36,23 @@ class MissingValueMarkersError(ValueError):
 
 class NoInputRowsError(ValueError):
     """Raised when a file has a header row but no Input Rows to summarize."""
+
+
+def normalize_missing_markers(markers: Iterable[str]) -> NormalizedMissingMarkers:
+    return NormalizedMissingMarkers(
+        frozenset(marker.strip().casefold() for marker in markers)
+    )
+
+
+def is_missing_value(
+    value: str | None,
+    normalized_markers: NormalizedMissingMarkers,
+) -> bool:
+    if value is None:
+        return True
+
+    normalized_value = value.strip().casefold()
+    return normalized_value == "" or normalized_value in normalized_markers
 
 
 @dataclass(frozen=True)
@@ -168,16 +188,15 @@ def register_presence_functions(
     missing_markers_by_column: dict[str, list[str]],
 ) -> None:
     for column_index, column_name in enumerate(column_names):
-        normalized_markers = {
-            marker.strip().casefold()
-            for marker in missing_markers_by_column.get(column_name, [])
-        }
+        normalized_markers = normalize_missing_markers(
+            missing_markers_by_column.get(column_name, [])
+        )
 
-        def is_present(value: str | None, markers: set[str] = normalized_markers) -> int:
-            if value is None:
-                return 0
-            normalized_value = value.strip().casefold()
-            return int(normalized_value != "" and normalized_value not in markers)
+        def is_present(
+            value: str | None,
+            markers: NormalizedMissingMarkers = normalized_markers,
+        ) -> int:
+            return int(not is_missing_value(value, markers))
 
         connection.create_function(
             presence_function_name(column_index),

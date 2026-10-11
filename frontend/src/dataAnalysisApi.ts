@@ -1,8 +1,10 @@
 import type { RowColumnMode } from "./rowColumnMode";
 import { serializeRowColumnFilters } from "./rowFilters";
 import type { RowColumnFilters } from "./rowFilters";
+import type { DataContractV1 } from "./dataContract";
 
-export type DataAnalysisKind = "formal_terms" | "group_data";
+export type DataAnalysisKind = "formal_terms" | "group_data" | "data_contract";
+export type DataAnalysisPanelKind = Exclude<DataAnalysisKind, "data_contract">;
 export type DataAnalysisState = "running" | "succeeded" | "failed" | "cancelled";
 
 export interface AnalysisProgress {
@@ -58,7 +60,23 @@ export interface GroupDataSummary {
   key_uniqueness: GroupDataKeyUniqueness;
 }
 
-export type DataAnalysisSummary = FormalTermsSummary | GroupDataSummary;
+export interface DataContractRuleSummary {
+  rule_index: number;
+  missing_count: number;
+  passing_count: number;
+  failing_count: number;
+}
+
+export interface DataContractSummary {
+  kind: "data_contract";
+  input_rows: number;
+  rules: DataContractRuleSummary[];
+}
+
+export type DataAnalysisSummary =
+  | FormalTermsSummary
+  | GroupDataSummary
+  | DataContractSummary;
 
 export interface DataAnalysisJobStatus {
   job_id: string;
@@ -118,7 +136,7 @@ export async function startDataAnalysisJob(
   worksheetName: string,
   missingValueMarkers: Record<string, string[]>,
   selectedColumns: string[],
-  analysisKind: DataAnalysisKind,
+  analysisKind: DataAnalysisPanelKind,
 ): Promise<DataAnalysisJobStatus> {
   const formData = new FormData();
   formData.append("file", file);
@@ -144,6 +162,38 @@ export async function startDataAnalysisJob(
   return await readResponseBody(
     response,
     "The data analysis could not be started.",
+  );
+}
+
+export async function startDataContractJob(
+  file: File,
+  worksheetName: string,
+  missingValueMarkers: Record<string, string[]>,
+  contract: DataContractV1,
+): Promise<DataAnalysisJobStatus> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("contract_json", JSON.stringify(contract));
+  formData.append("missing_markers", JSON.stringify(missingValueMarkers));
+  if (worksheetName.length > 0) {
+    formData.append("sheet", worksheetName);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch("/api/data-contract-jobs", {
+      method: "POST",
+      body: formData,
+    });
+  } catch {
+    throw new DataAnalysisRequestError(
+      "The local API could not be reached. Start it and try again.",
+    );
+  }
+
+  return await readResponseBody(
+    response,
+    "The data contract job could not be started.",
   );
 }
 
@@ -176,6 +226,41 @@ export async function cancelDataAnalysisJob(jobId: string): Promise<DataAnalysis
   }
 
   return await readResponseBody(response, "The data analysis could not be cancelled.");
+}
+
+export async function fetchDataContractJobStatus(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<DataAnalysisJobStatus> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/data-contract-jobs/${encodeURIComponent(jobId)}`,
+      { signal },
+    );
+  } catch {
+    throw new DataAnalysisRequestError(
+      "The local API could not be reached. Start it and try again.",
+    );
+  }
+
+  return await readResponseBody(response, "The data contract status could not be read.");
+}
+
+export async function cancelDataContractJob(jobId: string): Promise<DataAnalysisJobStatus> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/data-contract-jobs/${encodeURIComponent(jobId)}/cancel`,
+      { method: "POST" },
+    );
+  } catch {
+    throw new DataAnalysisRequestError(
+      "The local API could not be reached. Start it and try again.",
+    );
+  }
+
+  return await readResponseBody(response, "The data contract job could not be cancelled.");
 }
 
 function detailQuery(target: DataAnalysisDetailTarget, filters: RowColumnFilters): string {
