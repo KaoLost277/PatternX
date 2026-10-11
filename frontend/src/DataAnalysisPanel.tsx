@@ -215,6 +215,35 @@ function groupDescription(columns: string[], group: DataGroup): string {
   return groupValues.join(", ");
 }
 
+interface GroupDataChartProps {
+  summary: GroupDataSummary;
+  onGroupSelected: (sourceIndex: number) => void;
+}
+
+export function GroupDataChart({ summary, onGroupSelected }: GroupDataChartProps) {
+  const chartItems = summary.groups.map((group, sourceIndex) => {
+    const description = groupDescription(summary.selected_columns, group);
+    return {
+      key: `group-${sourceIndex}`,
+      sourceIndex,
+      label: description,
+      count: group.count,
+      share: summary.input_rows === 0 ? 0 : group.count / summary.input_rows,
+      detailLabel: `the group ${description}`,
+    };
+  });
+
+  return (
+    <FrequencyBarChart
+      title="Most common Group Data Keys"
+      categoryName="Group Data Keys"
+      denominatorDescription="of all Input Rows"
+      items={chartItems}
+      onSelect={(item) => onGroupSelected(item.sourceIndex)}
+    />
+  );
+}
+
 export function DataAnalysisPanel({
   analysisKind,
   selectedFile,
@@ -845,18 +874,6 @@ export function GroupDataResults({
     });
   }
 
-  const groupChartItems = summary.groups.map((group, sourceIndex) => {
-    const description = groupDescription(summary.selected_columns, group);
-    return {
-      key: `group-${sourceIndex}`,
-      sourceIndex,
-      label: description,
-      count: group.count,
-      share: summary.input_rows === 0 ? 0 : group.count / summary.input_rows,
-      detailLabel: `the group ${description}`,
-    };
-  });
-
   return (
     <section className="grid min-w-0 gap-4" aria-labelledby="group-data-summary-heading">
       <div className="grid min-w-0 gap-2">
@@ -923,15 +940,12 @@ export function GroupDataResults({
         </dl>
       </section>
 
-      <FrequencyBarChart
-        title="Most common Group Data Keys"
-        categoryName="Group Data Keys"
-        denominatorDescription="of all Input Rows"
-        items={groupChartItems}
-        onSelect={(item) => {
-          const selectedGroup = summary.groups[item.sourceIndex];
+      <GroupDataChart
+        summary={summary}
+        onGroupSelected={(sourceIndex) => {
+          const selectedGroup = summary.groups[sourceIndex];
           if (selectedGroup !== undefined) {
-            openGroupDetail(item.sourceIndex, selectedGroup);
+            openGroupDetail(sourceIndex, selectedGroup);
           }
         }}
       />

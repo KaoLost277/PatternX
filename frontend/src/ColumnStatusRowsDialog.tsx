@@ -101,7 +101,10 @@ export function ColumnStatusRowsDialogView({
     >
       <div className="flex min-w-0 items-start justify-between gap-5 max-sm:gap-3">
         <div className="grid min-w-0 gap-2">
-          <h2 className={dialogHeadingClasses} id={headingId}>
+          <h2
+            className={`${dialogHeadingClasses} break-words [overflow-wrap:anywhere]`}
+            id={headingId}
+          >
             Input Rows where {columnName} {selectedStatus}
           </h2>
           <p id={descriptionId} className={statusTextClasses}>

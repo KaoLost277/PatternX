@@ -91,3 +91,19 @@ test("column-status details distinguish loading, empty, and retryable errors", a
   assert.match(errorMarkup, /role="alert"/);
   assert.match(errorMarkup, /Retry loading rows/);
 });
+
+test("column-status details wrap long source column names at narrow widths", async () => {
+  const { ColumnStatusRowsDialogView } = await viteServer.ssrLoadModule(
+    "/src/ColumnStatusRowsDialog.tsx",
+  );
+  const longColumnName = `<script>${"column-name-".repeat(10)}</script>`;
+  const markup = renderDialog(ColumnStatusRowsDialogView, {
+    columnName: longColumnName,
+    page: null,
+    loading: true,
+  });
+
+  assert.ok(markup.includes("&lt;script&gt;"));
+  assert.match(markup, /overflow-wrap:anywhere/);
+  assert.doesNotMatch(markup, /<script\b/i);
+});

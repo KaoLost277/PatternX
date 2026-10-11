@@ -10,8 +10,8 @@ export interface ColumnCompleteness {
   missing_share: number;
 }
 
-type ColumnOrder = "missing" | "present" | "source";
-type ColumnStatus = "present" | "missing";
+export type ColumnCompletenessChartOrder = "missing" | "present" | "source";
+export type ColumnStatus = "present" | "missing";
 
 interface ColumnCompletenessChartProps {
   columns: readonly ColumnCompleteness[];
@@ -19,12 +19,21 @@ interface ColumnCompletenessChartProps {
   onStatusSelected: (columnIndex: number, status: ColumnStatus) => void;
 }
 
+interface ColumnCompletenessChartViewProps extends ColumnCompletenessChartProps {
+  columnOrder: ColumnCompletenessChartOrder;
+  onColumnOrderChanged: (order: ColumnCompletenessChartOrder) => void;
+}
+
 interface IndexedColumn {
   column: ColumnCompleteness;
   sourceIndex: number;
 }
 
-function compareColumns(order: ColumnOrder, left: IndexedColumn, right: IndexedColumn): number {
+function compareColumns(
+  order: ColumnCompletenessChartOrder,
+  left: IndexedColumn,
+  right: IndexedColumn,
+): number {
   if (order === "source") {
     return left.sourceIndex - right.sourceIndex;
   }
@@ -39,12 +48,13 @@ function formatCount(count: number): string {
   return count.toLocaleString();
 }
 
-export function ColumnCompletenessChart({
+export function ColumnCompletenessChartView({
   columns,
   inputRows,
+  columnOrder,
+  onColumnOrderChanged,
   onStatusSelected,
-}: ColumnCompletenessChartProps) {
-  const [columnOrder, setColumnOrder] = useState<ColumnOrder>("missing");
+}: ColumnCompletenessChartViewProps) {
   const orderedColumns = columns
     .map((column, sourceIndex) => ({ column, sourceIndex }))
     .sort((left, right) => compareColumns(columnOrder, left, right));
@@ -68,6 +78,7 @@ export function ColumnCompletenessChart({
         className={[
           "min-h-10 min-w-10 shrink-0 border-y border-transparent",
           isPresent ? "bg-accent" : "bg-text-muted",
+          "hover:opacity-90 active:opacity-80",
           "focus-visible:z-10 focus-visible:outline-3 focus-visible:outline-offset-[-3px]",
           "focus-visible:outline-focus-ring disabled:cursor-default",
         ].join(" ")}
@@ -102,10 +113,12 @@ export function ColumnCompletenessChart({
         <label className="grid w-full max-w-sm min-w-0 gap-1 text-sm font-medium text-text-secondary">
           <span>Order columns by</span>
           <select
-            className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text hover:border-accent active:bg-surface-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             aria-label="Order columns by"
             value={columnOrder}
-            onChange={(event) => setColumnOrder(event.target.value as ColumnOrder)}
+            onChange={(event) =>
+              onColumnOrderChanged(event.target.value as ColumnCompletenessChartOrder)
+            }
           >
             <option value="missing">Most missing first</option>
             <option value="present">Most present first</option>
@@ -132,12 +145,15 @@ export function ColumnCompletenessChart({
             >
               <h4 className="m-0 break-words text-sm font-semibold text-text">{column.name}</h4>
               <div
-                className="flex min-w-0 overflow-hidden rounded-full bg-surface-muted"
-                role="group"
-                aria-label={`Present and missing Input Rows in ${column.name}`}
+                className="min-w-0 overflow-x-auto rounded-full"
+                role="region"
+                aria-label={`Present and missing Input Rows in ${column.name}. Scroll horizontally to select each status.`}
+                tabIndex={0}
               >
-                {renderStatusSegment(column, sourceIndex, "present")}
-                {renderStatusSegment(column, sourceIndex, "missing")}
+                <div className="flex min-w-full rounded-full bg-surface-muted" role="group">
+                  {renderStatusSegment(column, sourceIndex, "present")}
+                  {renderStatusSegment(column, sourceIndex, "missing")}
+                </div>
               </div>
               <p className={statusTextClasses}>
                 Present: {formatCount(column.present_count)} ({formatShare(column.present_share)})
@@ -149,5 +165,23 @@ export function ColumnCompletenessChart({
         </div>
       )}
     </section>
+  );
+}
+
+export function ColumnCompletenessChart({
+  columns,
+  inputRows,
+  onStatusSelected,
+}: ColumnCompletenessChartProps) {
+  const [columnOrder, setColumnOrder] = useState<ColumnCompletenessChartOrder>("missing");
+
+  return (
+    <ColumnCompletenessChartView
+      columns={columns}
+      inputRows={inputRows}
+      columnOrder={columnOrder}
+      onColumnOrderChanged={setColumnOrder}
+      onStatusSelected={onStatusSelected}
+    />
   );
 }

@@ -10,6 +10,48 @@ const viteServer = await createServer({
   appType: "custom",
 });
 
+function findFirstButton(element) {
+  if (Array.isArray(element)) {
+    for (const child of element) {
+      const button = findFirstButton(child);
+      if (button !== null) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  if (!React.isValidElement(element)) {
+    return null;
+  }
+  if (element.type === "button") {
+    return element;
+  }
+
+  return findFirstButton(element.props.children);
+}
+
+function findButtonByLabel(element, label) {
+  if (Array.isArray(element)) {
+    for (const child of element) {
+      const button = findButtonByLabel(child, label);
+      if (button !== null) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  if (!React.isValidElement(element)) {
+    return null;
+  }
+  if (element.type === "button" && element.props["aria-label"] === label) {
+    return element;
+  }
+
+  return findButtonByLabel(element.props.children, label);
+}
+
 after(async () => {
   await viteServer.close();
 });
@@ -44,6 +86,8 @@ test("frequency chart ranks the exact Top 10 and keeps counts and shares visible
   assert.match(markup, /12 Input Rows/);
   assert.match(markup, /40% of all Input Rows/);
   assert.match(markup, /aria-label="View Input Rows for pattern 1/);
+  assert.match(markup, /active:bg-surface-accent/);
+  assert.match(markup, /focus-visible:outline-focus-ring/);
 });
 
 test("frequency chart exposes full hostile labels as inert accessible text", async () => {
@@ -124,6 +168,34 @@ test("Completeness Patterns chart labels statuses and ranks the complete result"
   assert.doesNotMatch(markup, /Pattern 11|Pattern 12|Other/);
 });
 
+test("selecting a ranked Completeness Pattern keeps its canonical row-detail index", async () => {
+  const { CompletenessPatternsChart } = await viteServer.ssrLoadModule(
+    "/src/CompletenessPatternsChart.tsx",
+  );
+  const summary = {
+    input_rows: 10,
+    identifier_column: null,
+    analysis_columns: ["status"],
+    patterns: [
+      { statuses: ["present"], count: 1, share: 0.1, preview_rows: [] },
+      { statuses: ["missing"], count: 9, share: 0.9, preview_rows: [] },
+    ],
+  };
+  let selectedPatternIndex = null;
+  const chartElement = CompletenessPatternsChart({
+    summary,
+    onPatternSelected: (patternIndex) => {
+      selectedPatternIndex = patternIndex;
+    },
+  });
+  const chartTree = chartElement.type(chartElement.props);
+  const firstButton = findFirstButton(chartTree);
+
+  assert.ok(firstButton);
+  firstButton.props.onClick();
+  assert.equal(selectedPatternIndex, 1);
+});
+
 test("Column Completeness chart shows every column and ranks missing share first", async () => {
   const { ColumnCompletenessChart } = await viteServer.ssrLoadModule(
     "/src/ColumnCompletenessChart.tsx",
@@ -167,4 +239,42 @@ test("Column Completeness chart shows every column and ranks missing share first
   assert.match(markup, /aria-label="View Input Rows with missing values in all_missing/);
   assert.match(markup, /Order columns by/);
   assert.match(markup, /Scroll to view all columns/);
+  assert.match(markup, /Scroll horizontally to select each status/);
+  assert.doesNotMatch(markup, /overflow-hidden/);
+  assert.match(markup, /min-h-10 min-w-10/);
+  assert.match(markup, /hover:opacity-90 active:opacity-80/);
+  assert.match(markup, /focus-visible:outline-focus-ring/);
+});
+
+test("selecting a Column Completeness segment requests its source column and status", async () => {
+  const { ColumnCompletenessChartView } = await viteServer.ssrLoadModule(
+    "/src/ColumnCompletenessChart.tsx",
+  );
+  const columns = [
+    {
+      name: "email",
+      present_count: 3,
+      present_share: 0.75,
+      missing_count: 1,
+      missing_share: 0.25,
+    },
+  ];
+  let selectedStatus = null;
+  const tree = ColumnCompletenessChartView({
+    columns,
+    inputRows: 4,
+    columnOrder: "missing",
+    onColumnOrderChanged: () => {},
+    onStatusSelected: (columnIndex, status) => {
+      selectedStatus = { columnIndex, status };
+    },
+  });
+  const missingButton = findButtonByLabel(
+    tree,
+    "View Input Rows with missing values in email. 1 Input Rows, 25% of all Input Rows.",
+  );
+
+  assert.ok(missingButton);
+  missingButton.props.onClick();
+  assert.deepEqual(selectedStatus, { columnIndex: 0, status: "missing" });
 });

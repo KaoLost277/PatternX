@@ -154,6 +154,55 @@ test("Formal Terms Summary retains terms, structural formats, and row-detail act
   assert.match(markup, /aria-label="View Input Rows for the format &quot;EMP-&lt;4 digits&gt;&quot;"/);
 });
 
+function findReactElementByType(element, expectedType) {
+  if (Array.isArray(element)) {
+    for (const child of element) {
+      const match = findReactElementByType(child, expectedType);
+      if (match !== null) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  if (!React.isValidElement(element)) {
+    return null;
+  }
+  if (element.type === expectedType) {
+    return element;
+  }
+
+  if (typeof element.type === "function") {
+    const match = findReactElementByType(element.type(element.props), expectedType);
+    if (match !== null) {
+      return match;
+    }
+  }
+
+  return findReactElementByType(element.props.children, expectedType);
+}
+
+function findFirstButton(element) {
+  if (Array.isArray(element)) {
+    for (const child of element) {
+      const button = findFirstButton(child);
+      if (button !== null) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  if (!React.isValidElement(element)) {
+    return null;
+  }
+  if (element.type === "button") {
+    return element;
+  }
+
+  return findFirstButton(element.props.children);
+}
+
 test("Formal Terms charts show top non-missing terms per column with non-missing denominators", async () => {
   const { FormalTermsResults } = await viteServer.ssrLoadModule(
     "/src/DataAnalysisPanel.tsx",
@@ -202,6 +251,50 @@ test("Formal Terms charts show top non-missing terms per column with non-missing
   assert.match(statusChart, /Pending/);
 });
 
+test("selecting a Formal Term chart bar opens the original term row-detail index", async () => {
+  const { FormalTermsResults } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const { FrequencyBarChart } = await viteServer.ssrLoadModule(
+    "/src/FrequencyBarChart.tsx",
+  );
+  let selectedDetail = null;
+  const resultsTree = FormalTermsResults({
+    summary: {
+      kind: "formal_terms",
+      input_rows: 10,
+      selected_columns: ["status"],
+      columns: [
+        {
+          name: "status",
+          terms: [
+            { value: null, count: 9, share: 0.9 },
+            { value: "Approved", count: 1, share: 0.1 },
+          ],
+          format_patterns: [],
+        },
+      ],
+    },
+    onDetailOpened: (detail) => {
+      selectedDetail = detail;
+    },
+    onChangeColumns: () => {},
+  });
+  const chartElement = findReactElementByType(resultsTree, FrequencyBarChart);
+  assert.ok(chartElement);
+  const chartTree = chartElement.type(chartElement.props);
+  const firstButton = findFirstButton(chartTree);
+
+  assert.ok(firstButton);
+  firstButton.props.onClick();
+  assert.deepEqual(selectedDetail.target, {
+    kind: "term",
+    columnIndex: 0,
+    itemIndex: 1,
+  });
+  assert.match(selectedDetail.description, /Approved/);
+});
+
 test("Group Data chart shows the most common exact keys and preserves row shares", async () => {
   const { GroupDataResults } = await viteServer.ssrLoadModule(
     "/src/DataAnalysisPanel.tsx",
@@ -236,6 +329,44 @@ test("Group Data chart shows the most common exact keys and preserves row shares
   assert.match(markup, /Department=Operations, Status=\(blank\)/);
   assert.match(markup, /View Input Rows for the group Department=Sales, Status=Approved/);
   assert.match(markup, /Group Data Summary table/);
+});
+
+test("selecting a ranked Group Data Key preserves its original row-detail index", async () => {
+  const { GroupDataChart } = await viteServer.ssrLoadModule(
+    "/src/DataAnalysisPanel.tsx",
+  );
+  const { FrequencyBarChart } = await viteServer.ssrLoadModule(
+    "/src/FrequencyBarChart.tsx",
+  );
+  let selectedGroupIndex = null;
+  const chartElement = GroupDataChart({
+    summary: {
+      kind: "group_data",
+      input_rows: 5,
+      selected_columns: ["Department"],
+      key_uniqueness: {
+        distinct_key_count: 2,
+        singleton_key_count: 1,
+        repeated_key_count: 1,
+        input_rows_in_repeated_key_groups: 4,
+        singleton_key_share: 0.5,
+      },
+      groups: [
+        { values: ["Support"], count: 1, share: 0.2 },
+        { values: ["Sales"], count: 4, share: 0.8 },
+      ],
+    },
+    onGroupSelected: (sourceIndex) => {
+      selectedGroupIndex = sourceIndex;
+    },
+  });
+  assert.equal(chartElement.type, FrequencyBarChart);
+  const frequencyChartTree = chartElement.type(chartElement.props);
+  const firstButton = findFirstButton(frequencyChartTree);
+
+  assert.ok(firstButton);
+  firstButton.props.onClick();
+  assert.equal(selectedGroupIndex, 1);
 });
 
 test("every data column in analysis summaries exposes a filter and a sort control", async () => {

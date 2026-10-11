@@ -77,7 +77,7 @@ export function FrequencyBarChart({
                   type="button"
                   className={[
                     "grid min-h-11 w-full min-w-0 gap-1 rounded-control border border-border",
-                    "bg-surface px-3 py-2 text-left hover:bg-surface-muted",
+                    "bg-surface px-3 py-2 text-left hover:bg-surface-muted active:bg-surface-accent",
                     "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
                   ].join(" ")}
                   aria-label={accessibleLabel}
