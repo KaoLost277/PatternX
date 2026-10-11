@@ -84,7 +84,10 @@ export function FrequencyBarChart({
                   title={accessibleLabel}
                   onClick={() => onSelect(item)}
                 >
-                  <span className="min-w-0 truncate font-medium text-text" title={item.label}>
+                  <span
+                    className="min-w-0 break-words font-medium text-text [overflow-wrap:anywhere]"
+                    title={item.label}
+                  >
                     {item.label}
                   </span>
                   <span

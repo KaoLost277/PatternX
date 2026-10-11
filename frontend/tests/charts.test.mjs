@@ -119,6 +119,7 @@ test("frequency chart exposes full hostile labels as inert accessible text", asy
   assert.ok(markup.includes("&lt;script&gt;"));
   assert.doesNotMatch(markup, /<script\b/i);
   assert.match(markup, /title="&lt;script&gt;/);
+  assert.match(markup, /overflow-wrap:anywhere/);
   assert.match(markup, /100% of non-missing Input Rows in account_code/);
 });
 
@@ -272,14 +273,13 @@ test("Column Completeness chart shows every column and ranks missing share first
   assert.match(markup, /aria-label="View Input Rows with missing values in all_missing/);
   assert.match(markup, /Order columns by/);
   assert.match(markup, /Scroll to view all columns/);
-  assert.match(markup, /Scroll horizontally to select each status/);
+  assert.match(markup, /View rows/);
   assert.doesNotMatch(markup, /overflow-hidden/);
-  assert.match(markup, /min-h-10 min-w-10/);
-  assert.match(markup, /hover:opacity-90 active:opacity-80/);
+  assert.match(markup, /min-h-10/);
   assert.match(markup, /focus-visible:outline-focus-ring/);
 });
 
-test("selecting a Column Completeness segment requests its source column and status", async () => {
+test("selecting a Column Completeness status action requests its source column and status", async () => {
   const { ColumnCompletenessChartView } = await viteServer.ssrLoadModule(
     "/src/ColumnCompletenessChart.tsx",
   );

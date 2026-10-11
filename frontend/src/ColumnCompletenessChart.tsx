@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { formatShare } from "./displayFormat";
-import { hintTextClasses, statusTextClasses } from "./uiClasses";
+import {
+  hintTextClasses,
+  secondaryButtonClasses,
+  statusTextClasses,
+} from "./uiClasses";
 
 export interface ColumnCompleteness {
   name: string;
@@ -61,38 +65,20 @@ export function ColumnCompletenessChartView({
 
   function renderStatusSegment(
     column: ColumnCompleteness,
-    columnIndex: number,
     status: ColumnStatus,
   ) {
     const isPresent = status === "present";
-    const count = isPresent ? column.present_count : column.missing_count;
     const share = isPresent ? column.present_share : column.missing_share;
-    const segmentLabel = isPresent ? "present values" : "missing values";
-    const accessibleLabel =
-      `View Input Rows with ${segmentLabel} in ${column.name}. ` +
-      `${formatCount(count)} Input Rows, ${formatShare(share)} of all Input Rows.`;
 
     return (
-      <button
-        type="button"
+      <span
         className={[
-          "min-h-10 min-w-10 shrink-0 border-y border-transparent",
-          isPresent ? "bg-accent" : "bg-text-muted",
-          "hover:opacity-90 active:opacity-80",
-          "focus-visible:z-10 focus-visible:outline-3 focus-visible:outline-offset-[-3px]",
-          "focus-visible:outline-focus-ring disabled:cursor-default",
+          "block h-8 shrink-0",
+          isPresent ? "rounded-l-full bg-accent" : "rounded-r-full bg-text-muted",
         ].join(" ")}
-        style={{
-          width: `${Math.max(0, Math.min(share, 1)) * 100}%`,
-          minWidth: count === 0 ? 0 : "2.5rem",
-        }}
-        aria-label={accessibleLabel}
-        title={accessibleLabel}
-        disabled={count === 0}
-        onClick={() => onStatusSelected(columnIndex, status)}
-      >
-        <span className="sr-only">{accessibleLabel}</span>
-      </button>
+        style={{ width: `${Math.max(0, Math.min(share, 1)) * 100}%` }}
+        aria-hidden="true"
+      />
     );
   }
 
@@ -145,21 +131,46 @@ export function ColumnCompletenessChartView({
             >
               <h4 className="m-0 break-words text-sm font-semibold text-text">{column.name}</h4>
               <div
-                className="min-w-0 overflow-x-auto rounded-full"
-                role="region"
-                aria-label={`Present and missing Input Rows in ${column.name}. Scroll horizontally to select each status.`}
-                tabIndex={0}
+                className="flex min-w-0 rounded-full bg-surface-muted"
+                role="img"
+                aria-label={
+                  `Present: ${formatCount(column.present_count)} (${formatShare(column.present_share)}). ` +
+                  `Missing: ${formatCount(column.missing_count)} (${formatShare(column.missing_share)}).`
+                }
               >
-                <div className="flex min-w-full rounded-full bg-surface-muted" role="group">
-                  {renderStatusSegment(column, sourceIndex, "present")}
-                  {renderStatusSegment(column, sourceIndex, "missing")}
-                </div>
+                {renderStatusSegment(column, "present")}
+                {renderStatusSegment(column, "missing")}
               </div>
-              <p className={statusTextClasses}>
-                Present: {formatCount(column.present_count)} ({formatShare(column.present_share)})
-                {" · "}
-                Missing: {formatCount(column.missing_count)} ({formatShare(column.missing_share)})
-              </p>
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  className={`${secondaryButtonClasses} w-full min-w-0 justify-start break-words`}
+                  disabled={column.present_count === 0}
+                  aria-label={
+                    `View Input Rows with present values in ${column.name}. ` +
+                    `${formatCount(column.present_count)} Input Rows, ` +
+                    `${formatShare(column.present_share)} of all Input Rows.`
+                  }
+                  onClick={() => onStatusSelected(sourceIndex, "present")}
+                >
+                  Present: {formatCount(column.present_count)} ({formatShare(column.present_share)})
+                  {" · View rows"}
+                </button>
+                <button
+                  type="button"
+                  className={`${secondaryButtonClasses} w-full min-w-0 justify-start break-words`}
+                  disabled={column.missing_count === 0}
+                  aria-label={
+                    `View Input Rows with missing values in ${column.name}. ` +
+                    `${formatCount(column.missing_count)} Input Rows, ` +
+                    `${formatShare(column.missing_share)} of all Input Rows.`
+                  }
+                  onClick={() => onStatusSelected(sourceIndex, "missing")}
+                >
+                  Missing: {formatCount(column.missing_count)} ({formatShare(column.missing_share)})
+                  {" · View rows"}
+                </button>
+              </div>
             </div>
           ))}
         </div>
