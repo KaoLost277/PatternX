@@ -518,13 +518,18 @@ test("the top navigation exposes all analysis modes as disabled tabs before impo
 
   assert.match(markup, /<h1[^>]*>PatternX Data Profiler<\/h1>/);
   assert.match(markup, /<nav[^>]*aria-label="Analysis modes"[^>]*role="tablist"/);
-  for (const mode of ["Completeness Patterns", "Formal Terms", "Group Data"]) {
+  for (const mode of [
+    "Completeness Patterns",
+    "Formal Terms",
+    "Group Data",
+    "Data Contracts",
+  ]) {
     const tabButtonPattern = new RegExp(
       `<button[^>]*role="tab"[^>]*disabled=""[^>]*>${mode}<\\/button>`,
     );
     assert.match(markup, tabButtonPattern);
   }
-  for (const mode of ["completeness", "formal_terms", "group_data"]) {
+  for (const mode of ["completeness", "formal_terms", "group_data", "data_contract"]) {
     assert.match(markup, new RegExp(`aria-controls="analysis-panel-${mode}"`));
     assert.match(markup, new RegExp(`id="analysis-panel-${mode}"[^>]*role="tabpanel"`));
   }

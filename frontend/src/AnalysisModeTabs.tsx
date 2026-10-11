@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from "react";
 
-export type AnalysisModeId = "completeness" | "formal_terms" | "group_data";
+export type AnalysisModeId = "completeness" | "formal_terms" | "group_data" | "data_contract";
 
 interface AnalysisModeTab {
   id: AnalysisModeId;
@@ -11,6 +11,7 @@ const ANALYSIS_MODE_TABS: AnalysisModeTab[] = [
   { id: "completeness", label: "Completeness Patterns" },
   { id: "formal_terms", label: "Formal Terms" },
   { id: "group_data", label: "Group Data" },
+  { id: "data_contract", label: "Data Contracts" },
 ];
 
 interface AnalysisModeTabsProps {

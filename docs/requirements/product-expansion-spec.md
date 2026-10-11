@@ -1,6 +1,6 @@
 # Product expansion specification
 
-**Status:** Phase 1, the uniqueness summary, is implemented and verified. Later phases remain proposed.
+**Status:** Phases 1 and 2 are implemented and verified. Later phases remain proposed.
 **Roadmap:** [PatternX Product Expansion Roadmap](../roadmaps/product-expansion.md)
 **Research:** [Product expansion research and sources](../research/patternx-product-expansion.md)
 
@@ -76,6 +76,46 @@ The UI does not calculate the metrics from its table projection because sorting,
 - **PX-CONTRACT-04.** PatternX must reject or clearly report unsupported contract versions and rules. It must not ignore them silently or claim full Frictionless Table Schema or CSVW compatibility.
 - **PX-CONTRACT-05.** PatternX must not fetch a contract or referenced metadata from a URL. Users must select a local file.
 
+#### Version 1 format and parsing
+
+Version 1 uses the numeric value `1` for `version` and an ordered, non-empty `rules` array. The parser rejects booleans and all other numeric values. Each rule identifies a column by its exact normalized name.
+
+```json
+{
+  "version": 1,
+  "rules": [
+    { "column": "Email", "kind": "required" },
+    {
+      "column": "Status",
+      "kind": "enum",
+      "values": ["Active", "Inactive"]
+    },
+    { "column": "Age", "kind": "type", "value_type": "integer" },
+    {
+      "column": "Start Date",
+      "kind": "type",
+      "value_type": "date",
+      "date_format": "YYYY-MM-DD"
+    }
+  ]
+}
+```
+
+- Version 1 supports `required`, `enum`, and `type` rules. An `enum` requires a non-empty array of distinct, non-empty strings. A `type` rule accepts `integer`, `number`, or `date`. A `date` rule requires `date_format` to equal either `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`; other type rules do not accept that field.
+- The parser rejects malformed JSON, booleans or numeric values other than `1` for the version, unknown fields, unsupported rule kinds or types, invalid enum definitions, and contracts with no rules. It applies no partial contract. Future versions require an explicit versioned format change. PatternX does not migrate an unsupported version silently.
+- The importer trims headers and suffixes duplicate names before returning column names. Contract rules match those normalized names exactly and case-sensitively. A rule with no match or more than one match rejects the whole request before a job starts.
+- An `enum` compares the original non-missing cell text exactly. It does not trim or change case. A configured Missing Value marker takes precedence over every rule.
+- An `integer` trims surrounding whitespace, then accepts an optional ASCII sign followed by ASCII digits. It rejects decimal points, exponents, separators, and non-ASCII digits.
+- A `number` trims surrounding whitespace, then accepts a finite ASCII base-10 decimal with an optional sign, decimal point, and exponent. It rejects grouping separators, locale-specific decimal separators, `NaN`, and infinity.
+- A `date` trims surrounding whitespace and validates the exact selected format. `YYYY-MM-DD` accepts a valid calendar date. `YYYY-MM-DD HH:MM:SS` accepts a valid date and time in the text form that PatternX reads from XLSX date cells. It rejects fractional seconds, `T` separators, time zones, and other formats. PatternX preserves all source text and does not convert stored values.
+- Contract results follow the contract rule order. The response identifies each result by its zero-based rule index and reports counts only. It does not return allowed values or source-cell values.
+
+#### Phase 2 design decision
+
+The frontend keeps the editable contract in memory and imports or exports JSON only when the user requests those actions. It submits the selected file, worksheet, applied Missing Value markers, and contract to a dedicated contract-job route. The backend parses and resolves the full contract before creating the job. The worker drops the resolved contract when it reaches a terminal state; the stored job status contains aggregate counts only. A typed contract job shares the Formal Terms and Group Data worker lifecycle but has no row-detail or row-export operations. The Completeness Patterns job path remains unchanged. This avoids both a contract branch in the row-detail job and a migration of the Completeness worker. Results use rule order instead of generated rule IDs.
+
+Contract jobs delete their SQLite database after they produce aggregate results because no contract feature reads source rows after completion. They also delete the raw upload and normalized worksheet copy. Failure and cancellation delete the full job directory. Existing modes keep their current SQLite retention for row details.
+
 #### Rule results
 
 - **PX-CONTRACT-06.** PatternX must report exact Input Row counts for missing, passing, and failing values for each rule.
@@ -93,7 +133,7 @@ The UI does not calculate the metrics from its table projection because sorting,
 - For each rule, missing, pass, and fail counts match deterministic CSV and XLSX fixtures.
 - Missing configured markers follow the current Missing Value behavior. Required rules fail on missing values. Type and allowed-value checks do not reinterpret missing values as parse failures.
 - Unsupported rules and versions produce clear messages instead of partial, silent validation.
-- Cancellation and failure remove temporary row data. A successful job follows the existing temporary retention lifecycle.
+- Cancellation and failure remove temporary row data. A successful contract job removes its SQLite database after computing its aggregate result. Existing modes retain successful databases only where row-detail features need them.
 
 ### Phase 3. Unified column profile
 
@@ -187,9 +227,6 @@ The UI does not calculate the metrics from its table projection because sorting,
 
 ## Open decisions before later phases
 
-- What exact JSON schema and migration policy will the contract use?
-- Which number and date formats, locale rules, and decimal precision will the first contract version support?
-- How will PatternX identify a column if an input file has duplicate header names?
 - Which snapshot settings must match before PatternX can compare each metric?
 - Which normalization operations, beyond case and surrounding whitespace, are safe to suggest?
 - Does cross-file reference checking solve a confirmed user need, and which file combinations must it support?

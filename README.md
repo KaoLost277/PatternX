@@ -15,11 +15,19 @@ columns' present and missing statuses. The Formal Terms analysis reports exact d
 repeated structural formats. The Group Data analysis reports observed exact value combinations,
 their counts and shares, and a uniqueness summary for the selected Group Data Keys. Charts visualize
 Column Completeness, the most frequent Completeness Patterns, Formal Terms, and Group Data Keys; the
-exact tables remain available alongside the charts. All three analyses run as background jobs with
-progress, elapsed-time reporting, and cancellation. Completeness Patterns provides the aggregate
-downloads `column_completeness.csv` and `pattern_summary.csv`. Users can inspect matching Input Rows
-for column present/missing statuses, patterns, terms, structural formats, or Group Data Keys and
-explicitly download matching rows as CSV from row details.
+exact tables remain available alongside the charts. Completeness Patterns, Formal Terms, Group Data,
+and Data Contracts run as background jobs. The app reports progress, elapsed time, and cancellation
+for each job. Completeness Patterns provides the aggregate downloads `column_completeness.csv` and
+`pattern_summary.csv`. Users can inspect matching Input Rows for column present/missing statuses,
+patterns, terms, structural formats, or Group Data Keys and explicitly download matching rows as CSV.
+
+Data Contracts let you create, import, and export a version 1 JSON contract, then check it against the
+selected file. Rules can require a value, allow exact values, or check an explicitly selected integer,
+number, or date format. Results show exact missing, passing, and failing Input Row counts for each
+rule. Missing Values use the applied column rules. A missing Input Row also fails a required rule, so
+those two counts overlap. Missing values for enum and type rules stay separate from pass and fail.
+Contract results never display or export failing row values. The app keeps contract rules in memory
+unless the user explicitly exports them.
 
 ## Prerequisites
 
@@ -68,7 +76,7 @@ limit is counted to its full 1,048,575 data rows. CSV files have no such workshe
 
 ## Analysis jobs
 
-Completeness Patterns, Formal Terms, and Group Data run as background jobs. While one runs, the app
+Completeness Patterns, Formal Terms, Group Data, and Data Contracts run as background jobs. While one runs, the app
 reports its stage, elapsed time, and progress, and the user can cancel it. Cancelling removes the
 job's working data.
 
@@ -92,7 +100,8 @@ mode may keep a temporary SQLite database while the backend runs. These database
 row details and explicit row-level exports. A replacement summary or job, a newly accepted dataset
 import, changed Missing Value rules, graceful backend shutdown, or startup cleanup removes the
 corresponding retained databases. Raw uploads and normalized worksheet copies are removed when the
-summary or analysis finishes.
+summary or analysis finishes. Data Contract jobs delete their SQLite database after computing
+aggregate results because they do not provide row details.
 
 ## Exports
 
