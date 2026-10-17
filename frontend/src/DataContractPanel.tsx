@@ -381,6 +381,14 @@ export function DataContractPanel({
     : null;
   const resultRules = submittedRules ?? rules;
   const controlsDisabled = isBusy || selectedColumn === null;
+  const columnHasError =
+    contractError !== null && contractError === "Select a column before adding a rule.";
+  const enumHasError =
+    contractError !== null &&
+    selectedRuleKind === "enum" &&
+    (contractError === "Enter at least one allowed value, with one value per line." ||
+      contractError === "Allowed values cannot be empty or whitespace-only." ||
+      contractError === "Allowed values must be distinct.");
 
   return (
     <div className="grid min-w-0 gap-4" hidden={hidden}>
@@ -400,7 +408,9 @@ export function DataContractPanel({
         <section className="grid min-w-0 content-start gap-4 rounded-panel border border-border bg-surface p-4 shadow-card sm:p-panel">
           <div className="grid min-w-0 gap-1">
             <h3 className="text-lg font-semibold text-text">Add a rule</h3>
-            <p className={hintTextClasses}>Choose a column and define one check.</p>
+            <p className={hintTextClasses} id="contract-rule-form-hint">
+              Choose a column and define one check.
+            </p>
           </div>
 
           <form className="grid min-w-0 gap-3" onSubmit={handleRuleAdded}>
@@ -410,10 +420,21 @@ export function DataContractPanel({
                   Column
                 </label>
                 <select
+                  aria-describedby={
+                    columnHasError
+                      ? "contract-rule-error"
+                      : "contract-rule-form-hint"
+                  }
+                  aria-invalid={columnHasError}
                   className="min-h-11 min-w-0 rounded-control border border-border-strong bg-surface px-3 text-sm text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                   disabled={controlsDisabled}
                   id="contract-column"
-                  onChange={(event) => setSelectedColumnName(event.currentTarget.value)}
+                  onChange={(event) => {
+                    setSelectedColumnName(event.currentTarget.value);
+                    if (contractError !== null) {
+                      setContractError(null);
+                    }
+                  }}
                   value={selectedColumn ?? ""}
                 >
                   {columnNames.map((columnName, columnIndex) => (
@@ -436,6 +457,9 @@ export function DataContractPanel({
                     if (isDataContractRuleKind(nextRuleKind)) {
                       setSelectedRuleKind(nextRuleKind);
                     }
+                    if (contractError !== null) {
+                      setContractError(null);
+                    }
                   }}
                   value={selectedRuleKind}
                 >
@@ -452,10 +476,22 @@ export function DataContractPanel({
                   Allowed values, one per line
                 </label>
                 <textarea
+                  aria-describedby={
+                    enumHasError
+                      ? "contract-rule-error"
+                      : "contract-rule-form-hint"
+                  }
+                  aria-invalid={enumHasError}
                   className="min-h-24 min-w-0 resize-y rounded-control border border-border-strong bg-surface px-3 py-2 text-sm text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                   disabled={controlsDisabled}
                   id="contract-enum-values"
-                  onChange={(event) => setEnumValuesText(event.currentTarget.value)}
+                  onChange={(event) => {
+                    setEnumValuesText(event.currentTarget.value);
+                    if (contractError !== null) {
+                      setContractError(null);
+                    }
+                  }}
+                  required
                   value={enumValuesText}
                 />
               </div>
@@ -509,16 +545,17 @@ export function DataContractPanel({
               </div>
             )}
 
+            {contractError !== null && (
+              <p className={errorMessageClasses} id="contract-rule-error" role="alert">
+                {contractError}
+              </p>
+            )}
+
             <button className={secondaryButtonClasses} disabled={controlsDisabled} type="submit">
               Add rule
             </button>
           </form>
 
-          {contractError !== null && (
-            <p className={errorMessageClasses} role="alert">
-              {contractError}
-            </p>
-          )}
           {columnIssues.length > 0 && (
             <p className={errorMessageClasses} role="alert">
               Fix these column matches before you run the contract. {columnIssues.join(" ")}
