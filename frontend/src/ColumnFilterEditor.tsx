@@ -198,66 +198,68 @@ export function ColumnFilterEditor<Key extends string>({
       onToggle={handleFilterPopoverToggled}
       onKeyDown={handleFilterEditorKeyDown}
     >
-      <div className="grid min-w-0 gap-2">
-        <h2 className="text-base font-semibold" id={`${popoverId}-title`}>
-          Filter {target?.label ?? "column"}
-        </h2>
-        <label className="grid min-w-0 gap-1 text-sm font-medium text-text-secondary">
-          <span>Match type</span>
-          <select
-            ref={filterMatchSelectRef}
-            className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            value={filterMatch}
-            aria-label={`Match type for ${target?.label ?? "column"}`}
-            onChange={handleFilterMatchChanged}
-          >
-            <option value="contains">Contains</option>
-            <option value="exact">Exactly matches</option>
-            {target?.allowsMissing === true && (
-              <option value="missing">Missing Value</option>
-            )}
-          </select>
-        </label>
-        {!filterValueInputHidden && (
+      <form className="grid min-w-0 gap-3" onSubmit={handleFilterApplied}>
+        <div className="grid min-w-0 gap-2">
+          <h2 className="text-base font-semibold" id={`${popoverId}-title`}>
+            Filter {target?.label ?? "column"}
+          </h2>
           <label className="grid min-w-0 gap-1 text-sm font-medium text-text-secondary">
-            <span>Value</span>
-            <input
-              ref={filterValueInputRef}
-              type="search"
-              value={filterValue}
+            <span>Match type</span>
+            <select
+              ref={filterMatchSelectRef}
               className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-              aria-label={`Value for ${target?.label ?? "column"} filter`}
-              onChange={handleFilterValueChanged}
-            />
+              value={filterMatch}
+              aria-label={`Match type for ${target?.label ?? "column"}`}
+              onChange={handleFilterMatchChanged}
+            >
+              <option value="contains">Contains</option>
+              <option value="exact">Exactly matches</option>
+              {target?.allowsMissing === true && (
+                <option value="missing">Missing Value</option>
+              )}
+            </select>
           </label>
-        )}
-        <p className={hintTextClasses}>
-          Contains ignores letter case. Exact matches preserve case and spacing. Missing Value
-          matches values this table identifies as missing.
-        </p>
-      </div>
-      <form className="flex flex-wrap gap-2" onSubmit={handleFilterApplied}>
-        <button
-          type="submit"
-          className={primaryButtonClasses}
-          disabled={target === null || (draft.kind === "text" && draft.value.length === 0)}
-        >
-          Apply filter
-        </button>
-        {target?.filter !== undefined && (
+          {!filterValueInputHidden && (
+            <label className="grid min-w-0 gap-1 text-sm font-medium text-text-secondary">
+              <span>Value</span>
+              <input
+                ref={filterValueInputRef}
+                type="search"
+                value={filterValue}
+                className="min-h-10 w-full min-w-0 rounded-control border border-border-strong bg-surface px-3 py-2 text-text focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                aria-label={`Value for ${target?.label ?? "column"} filter`}
+                onChange={handleFilterValueChanged}
+              />
+            </label>
+          )}
+          <p className={hintTextClasses}>
+            Contains ignores letter case. Exact matches preserve case and spacing. Missing Value
+            matches values this table identifies as missing.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <button
-            type="button"
-            className={secondaryButtonClasses}
-            onClick={() => {
-              if (target !== null) {
-                onClear(target.key);
-              }
-              closeFilterEditor();
-            }}
+            type="submit"
+            className={primaryButtonClasses}
+            disabled={target === null || (draft.kind === "text" && draft.value.length === 0)}
           >
-            Clear this filter
+            Apply filter
           </button>
-        )}
+          {target?.filter !== undefined && (
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              onClick={() => {
+                if (target !== null) {
+                  onClear(target.key);
+                }
+                closeFilterEditor();
+              }}
+            >
+              Clear this filter
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );
