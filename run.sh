@@ -23,6 +23,6 @@ echo "Starting the API on http://127.0.0.1:8000 (loopback only) ..."
 api_process_id=$!
 trap 'kill "$api_process_id" 2>/dev/null || true' EXIT
 
-echo "Starting the web UI on http://localhost:5173 ..."
+echo "Starting the web UI on http://localhost:3000 ..."
 cd "$repository_root/frontend"
 npm run dev

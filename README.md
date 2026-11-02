@@ -48,7 +48,7 @@ On macOS (or Linux):
 ./run.sh
 ```
 
-Then open http://localhost:5173 in your browser. The scripts create a Python virtual environment
+Then open http://localhost:3000 in your browser. The scripts create a Python virtual environment
 and install dependencies on first run.
 
 The API listens on http://127.0.0.1:8000, bound to loopback only. The web UI talks to it through a

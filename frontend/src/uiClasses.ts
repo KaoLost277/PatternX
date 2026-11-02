@@ -130,3 +130,16 @@ export const missingValueTableClasses = [
   "[&_th]:border-b [&_th]:border-border [&_th]:px-3 [&_th]:py-2.5",
   "[&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5",
 ].join(" ");
+
+export const panelCardClasses = [
+  "grid min-w-0 gap-4 rounded-panel border border-border bg-surface p-4 shadow-card sm:p-panel",
+].join(" ");
+
+export const statCardClasses = [
+  "grid min-w-0 gap-1 rounded-control border border-border bg-surface p-3.5 shadow-card transition-colors hover:border-accent/40",
+].join(" ");
+
+export const explainerBannerClasses = [
+  "flex min-w-0 items-start gap-3 rounded-control border border-border bg-surface-muted p-3.5 text-sm text-text-secondary",
+].join(" ");
+

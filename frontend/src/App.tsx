@@ -11,6 +11,8 @@ import { PatternRowsDialog } from "./PatternRowsDialog";
 import type { ColumnStatus } from "./columnStatusRows";
 import type { RowColumnMode } from "./rowColumnMode";
 import { PatternStatusLabel } from "./PatternPreview";
+import { OnboardingHero } from "./OnboardingHero";
+import { DataHealthOverview } from "./DataHealthOverview";
 import { DataAnalysisPanel } from "./DataAnalysisPanel";
 import { DataContractPanel } from "./DataContractPanel";
 import { cancelDataAnalysisJob, cancelDataContractJob } from "./dataAnalysisApi";
@@ -841,14 +843,7 @@ function App() {
     }
   }
 
-  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    // Allow choosing the same file again after a failed or repeated import.
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-
+  async function loadSourceFile(file: File) {
     setSelectedFile(file);
     setSelectedFileName(null);
     setDatasetVersion((previousVersion) => previousVersion + 1);
@@ -864,6 +859,30 @@ function App() {
     }
 
     await loadColumnCompleteness(file, {}, "");
+  }
+
+  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Allow choosing the same file again after a failed or repeated import.
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    await loadSourceFile(file);
+  }
+
+  function handleResetFile() {
+    setSelectedFile(null);
+    setSelectedFileName(null);
+    setSheetNames([]);
+    setSelectedSheet("");
+    setActiveWorksheetName("");
+    setWorksheetRowLimit(null);
+    resetImportedFileState();
+    if (datasetFileInputRef.current) {
+      datasetFileInputRef.current.value = "";
+    }
   }
 
   async function handleWorksheetSelected(event: ChangeEvent<HTMLSelectElement>) {
@@ -1486,6 +1505,13 @@ function App() {
           has been read.
         </p>
 
+        {selectedFileName === null && (
+          <OnboardingHero
+            onFileSelect={loadSourceFile}
+            disabled={statusMessage !== null}
+          />
+        )}
+
         <SharedDatasetContextPanel
           fileName={selectedFileName}
           worksheetName={activeWorksheetName}
@@ -1659,6 +1685,18 @@ function App() {
             )}
           </details>
         </SharedDatasetContextPanel>
+
+        {summary !== null && (
+          <DataHealthOverview
+            fileName={selectedFileName ?? "Loaded Dataset"}
+            worksheetName={activeWorksheetName}
+            inputRows={summary.input_rows}
+            columns={summary.columns}
+            onSelectMode={handleAnalysisModeSelected}
+            onResetFile={handleResetFile}
+            activeMode={activeAnalysisMode}
+          />
+        )}
 
         {columnNames.length > 0 && activeAnalysisMode === "choose" && (
           <section

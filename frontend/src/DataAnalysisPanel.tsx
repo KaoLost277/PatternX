@@ -40,7 +40,9 @@ import {
   primaryButtonClasses,
   secondaryButtonClasses,
   statusTextClasses,
+  explainerBannerClasses,
 } from "./uiClasses";
+import { TableIcon, LayersIcon } from "./icons";
 
 type TermSortKey = "term" | "count" | "share";
 type FormatPatternSortKey = "format" | "occurrences" | "distinctTerms" | "share";
@@ -558,6 +560,32 @@ export function DataAnalysisPanel({
           onOpenChange={setSetupExpanded}
         >
           <div className="grid min-w-0 gap-4">
+            <div className={explainerBannerClasses}>
+              {analysisKind === "formal_terms" ? (
+                <>
+                  <TableIcon className="size-4 shrink-0 text-accent mt-0.5" />
+                  <div className="grid gap-0.5 text-xs">
+                    <strong className="text-text font-semibold">About Formal Terms:</strong>
+                    <p className="m-0 text-text-secondary">
+                      Extracts distinct exact values and detects abstract structural formatting patterns
+                      (e.g. uppercase letters, digits, punctuation) to spot formatting inconsistencies.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <LayersIcon className="size-4 shrink-0 text-accent mt-0.5" />
+                  <div className="grid gap-0.5 text-xs">
+                    <strong className="text-text font-semibold">About Group Data:</strong>
+                    <p className="m-0 text-text-secondary">
+                      Computes uniqueness, observed combinations, counts, and frequency shares across
+                      chosen key columns to evaluate composite keys and categoricals.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
             <p className="m-0 max-w-4xl text-sm leading-6 text-text-secondary">
               {analysisKind === "formal_terms"
                 ? "Review exact terms and repeated structural formats in the columns you select."

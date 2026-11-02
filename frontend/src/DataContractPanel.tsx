@@ -26,7 +26,9 @@ import {
   primaryButtonClasses,
   secondaryButtonClasses,
   summaryTableClasses,
+  explainerBannerClasses,
 } from "./uiClasses";
+import { ShieldCheckIcon, SparklesIcon } from "./icons";
 
 const CONTRACT_JOB_KIND = "data_contract";
 const JOB_POLL_INTERVAL_MILLISECONDS = 500;
@@ -249,6 +251,83 @@ export function DataContractPanel({
     clearCurrentJob();
   }
 
+  function handleSuggestSanityRules() {
+    const suggestedRules: DataContractRule[] = [...rules];
+    const existingRuleKeys = new Set(
+      rules.map((r) => `${r.column}:${r.kind}:${r.kind === "type" ? r.value_type : ""}`),
+    );
+
+    for (const col of columnNames) {
+      const lower = col.toLowerCase();
+      // Required check for IDs/codes/keys
+      if (lower.includes("id") || lower.includes("code") || lower.includes("key")) {
+        const key = `${col}:required:`;
+        if (!existingRuleKeys.has(key)) {
+          suggestedRules.push({ column: col, kind: "required" });
+          existingRuleKeys.add(key);
+        }
+      }
+      // Date check
+      if (lower.includes("date") || lower.includes("time") || lower.includes("created")) {
+        const key = `${col}:type:date`;
+        if (!existingRuleKeys.has(key)) {
+          suggestedRules.push({
+            column: col,
+            kind: "type",
+            value_type: "date",
+            date_format: "YYYY-MM-DD",
+          });
+          existingRuleKeys.add(key);
+        }
+      }
+      // Numeric check
+      if (
+        lower.includes("amount") ||
+        lower.includes("price") ||
+        lower.includes("salary") ||
+        lower.includes("cost") ||
+        lower.includes("total") ||
+        lower.includes("qty") ||
+        lower.includes("quantity")
+      ) {
+        const key = `${col}:type:number`;
+        if (!existingRuleKeys.has(key)) {
+          suggestedRules.push({ column: col, kind: "type", value_type: "number" });
+          existingRuleKeys.add(key);
+        }
+      }
+    }
+
+    const addedCount = suggestedRules.length - rules.length;
+    replaceRules(suggestedRules);
+    setFeedback(
+      addedCount > 0
+        ? `Suggested ${addedCount} sanity rules based on column names.`
+        : "All detected sanity rules already exist.",
+    );
+  }
+
+  function handleRequireAllColumns() {
+    const nextRules = [...rules];
+    const existingRequiredCols = new Set(
+      rules.filter((r) => r.kind === "required").map((r) => r.column),
+    );
+
+    let addedCount = 0;
+    for (const col of columnNames) {
+      if (!existingRequiredCols.has(col)) {
+        nextRules.push({ column: col, kind: "required" });
+        addedCount++;
+      }
+    }
+    replaceRules(nextRules);
+    setFeedback(
+      addedCount > 0
+        ? `Added Required rule to ${addedCount} columns.`
+        : "All columns already have a Required rule.",
+    );
+  }
+
   function handleRuleAdded(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (selectedColumn === null) {
@@ -392,8 +471,30 @@ export function DataContractPanel({
 
   return (
     <div className="grid min-w-0 gap-4" hidden={hidden}>
-      <header className="grid min-w-0 gap-2 rounded-panel border border-border bg-surface p-4 shadow-card sm:p-panel">
-        <h2 className="text-xl font-semibold tracking-tight text-text">Data Contracts</h2>
+      <header className="grid min-w-0 gap-3 rounded-panel border border-border bg-surface p-4 shadow-card sm:p-panel">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-control bg-accent/10 text-accent">
+              <ShieldCheckIcon className="size-5" />
+            </span>
+            <h2 className="text-xl font-semibold tracking-tight text-text">Data Contracts</h2>
+          </div>
+          <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-semibold text-text-secondary border border-border">
+            Schema & Value Validation
+          </span>
+        </div>
+
+        <div className={explainerBannerClasses}>
+          <ShieldCheckIcon className="size-4 shrink-0 text-accent mt-0.5" />
+          <div className="grid gap-0.5 text-xs">
+            <strong className="text-text font-semibold">How Data Contracts work:</strong>
+            <p className="m-0 text-text-secondary">
+              Define explicit guarantees (Required presence, Allowed values, Integer/Number/Date types).
+              Tests run offline and report exact passing and failing row counts without exposing raw values.
+            </p>
+          </div>
+        </div>
+
         <p className={hintTextClasses}>
           Add checks for this file and review aggregate counts. Contract results never show
           failing row values.
@@ -411,6 +512,32 @@ export function DataContractPanel({
             <p className={hintTextClasses} id="contract-rule-form-hint">
               Choose a column and define one check.
             </p>
+          </div>
+
+          {/* Quick Presets Bar */}
+          <div className="flex flex-wrap items-center gap-2 rounded-control border border-border bg-surface-muted p-2.5">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary">
+              <SparklesIcon className="size-3.5 text-accent" />
+              Quick Presets:
+            </span>
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              onClick={handleSuggestSanityRules}
+              disabled={controlsDisabled || columnNames.length === 0}
+              title="Auto-detect ID, date, and number columns and suggest validation rules"
+            >
+              Suggest Sanity Rules
+            </button>
+            <button
+              type="button"
+              className={secondaryButtonClasses}
+              onClick={handleRequireAllColumns}
+              disabled={controlsDisabled || columnNames.length === 0}
+              title="Set a Required rule for all columns"
+            >
+              Require All Columns
+            </button>
           </div>
 
           <form className="grid min-w-0 gap-3" onSubmit={handleRuleAdded}>

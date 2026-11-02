@@ -24,6 +24,9 @@
   --color-warning-surface: #fffbeb;
   --color-warning-border: #fde68a;
   --color-warning-text: #92400e;
+  --color-success-surface: #ecfdf5;
+  --color-success-border: #a7f3d0;
+  --color-success-text: #065f46;
 
   --spacing-page: clamp(0.75rem, 3vw, 2rem);
   --spacing-panel: 1.25rem;

@@ -26,7 +26,7 @@ $apiProcess = Start-Process -PassThru -NoNewWindow `
     -WorkingDirectory (Join-Path $repositoryRoot "backend")
 
 try {
-    Write-Output "Starting the web UI on http://localhost:5173 ..."
+    Write-Output "Starting the web UI on http://localhost:3000 ..."
     Push-Location (Join-Path $repositoryRoot "frontend")
     npm run dev
     Pop-Location
