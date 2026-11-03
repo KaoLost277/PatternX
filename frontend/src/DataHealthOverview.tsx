@@ -6,11 +6,17 @@ import {
   FileSpreadsheetIcon,
   RefreshCwIcon,
   ArrowRightIcon,
+  SparklesIcon,
 } from "./icons";
 import { CompletenessBadge } from "./CompletenessBadge";
 import type { ColumnCompleteness } from "./ColumnCompletenessChart";
 
-export type AnalysisMode = "completeness" | "formal_terms" | "group_data" | "data_contract";
+export type AnalysisMode =
+  | "completeness"
+  | "formal_terms"
+  | "group_data"
+  | "data_contract"
+  | "transformations";
 
 interface DataHealthOverviewProps {
   fileName: string;
@@ -70,14 +76,24 @@ export function DataHealthOverview({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onResetFile}
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-control border border-border-strong bg-action-secondary px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-muted hover:text-text active:translate-y-px focus-visible:outline-3 focus-visible:outline-focus-ring"
-        >
-          <RefreshCwIcon className="size-3.5" />
-          Choose Another File
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onSelectMode("transformations")}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-control border border-accent/40 bg-surface-accent px-3 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-surface-accent/70 active:translate-y-px focus-visible:outline-3 focus-visible:outline-focus-ring"
+          >
+            <SparklesIcon className="size-3.5 text-accent" />
+            Format & Clean Data
+          </button>
+          <button
+            type="button"
+            onClick={onResetFile}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-control border border-border-strong bg-action-secondary px-3 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-muted hover:text-text active:translate-y-px focus-visible:outline-3 focus-visible:outline-focus-ring"
+          >
+            <RefreshCwIcon className="size-3.5" />
+            Choose Another File
+          </button>
+        </div>
       </div>
 
       {/* KPI Stat Cards */}

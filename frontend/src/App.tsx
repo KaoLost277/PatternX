@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { AnalysisModeTabs } from "./AnalysisModeTabs";
+import { NavBar } from "./NavBar";
 import { ColumnCompletenessChart } from "./ColumnCompletenessChart";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { ColumnVisibilityPicker } from "./ColumnVisibilityPicker";
@@ -15,6 +15,7 @@ import { OnboardingHero } from "./OnboardingHero";
 import { DataHealthOverview } from "./DataHealthOverview";
 import { DataAnalysisPanel } from "./DataAnalysisPanel";
 import { DataContractPanel } from "./DataContractPanel";
+import { DataTransformationPanel } from "./DataTransformationPanel";
 import { cancelDataAnalysisJob, cancelDataContractJob } from "./dataAnalysisApi";
 import type { DataAnalysisJobStatus, DataAnalysisKind } from "./dataAnalysisApi";
 import { SortableHeader } from "./SortableHeader";
@@ -238,7 +239,8 @@ type ActiveAnalysisMode =
   | "completeness"
   | "formal_terms"
   | "group_data"
-  | "data_contract";
+  | "data_contract"
+  | "transformations";
 type ColumnCompletenessSortKey = "name" | "present_count" | "missing_count";
 type PatternSortKey = "count" | "share" | `status:${number}`;
 
@@ -250,7 +252,7 @@ function expandedSectionsByDefault(): Record<AppSectionId, boolean> {
   };
 }
 
-type AnalysisNoticeMode = Exclude<ActiveAnalysisMode, "choose">;
+type AnalysisNoticeMode = "completeness" | DataAnalysisKind;
 
 interface AnalysisNotice {
   jobId: string;
@@ -268,7 +270,7 @@ interface SharedAnalysisJob {
   cancelable: boolean;
 }
 
-function analysisModeLabel(mode: AnalysisNoticeMode): string {
+function analysisModeLabel(mode: ActiveAnalysisMode | AnalysisNoticeMode): string {
   if (mode === "completeness") {
     return "Completeness Patterns";
   }
@@ -277,6 +279,9 @@ function analysisModeLabel(mode: AnalysisNoticeMode): string {
   }
   if (mode === "group_data") {
     return "Group Data";
+  }
+  if (mode === "transformations") {
+    return "Data Transformations";
   }
   return "Data Contracts";
 }
@@ -385,6 +390,8 @@ function describePatternSort(
 
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [rawSourceFile, setRawSourceFile] = useState<File | null>(null);
+  const [isTransformed, setIsTransformed] = useState<boolean>(false);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   // A workbook lists its worksheets; exactly one of them can be chosen for the
   // analysis. A CSV file has no worksheets and needs no choice.
@@ -872,8 +879,27 @@ function App() {
     await loadSourceFile(file);
   }
 
+  async function handleApplyTransformedDataset(newFile: File) {
+    if (!rawSourceFile && selectedFile) {
+      setRawSourceFile(selectedFile);
+    }
+    setIsTransformed(true);
+    await loadSourceFile(newFile);
+  }
+
+  async function handleRevertOriginalDataset() {
+    if (rawSourceFile) {
+      const orig = rawSourceFile;
+      setIsTransformed(false);
+      setRawSourceFile(null);
+      await loadSourceFile(orig);
+    }
+  }
+
   function handleResetFile() {
     setSelectedFile(null);
+    setRawSourceFile(null);
+    setIsTransformed(false);
     setSelectedFileName(null);
     setSheetNames([]);
     setSelectedSheet("");
@@ -1371,18 +1397,17 @@ function App() {
   }
 
   return (
-    <main className="mx-auto grid min-h-screen w-full max-w-7xl content-start gap-5 bg-page px-page py-5 text-text sm:py-8">
-      <header className="sticky top-0 z-10 grid min-w-0 gap-3 border-b border-border bg-page/95 py-3 backdrop-blur">
-        <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-xl font-semibold tracking-tight text-text">PatternX Data Profiler</h1>
-          <p className="m-0 text-sm text-text-muted">{currentModeLabel}</p>
-        </div>
-        <AnalysisModeTabs
-          selectedMode={activeAnalysisMode === "choose" ? null : activeAnalysisMode}
-          enabled={columnNames.length > 0}
-          onSelect={handleAnalysisModeSelected}
-        />
-      </header>
+    <div className="min-h-screen bg-page text-text">
+      <NavBar
+        activeMode={activeAnalysisMode}
+        currentModeLabel={currentModeLabel}
+        hasDataset={columnNames.length > 0}
+        fileName={selectedFileName ?? undefined}
+        rowCount={summary?.input_rows}
+        columnCount={columnNames.length}
+        onSelectMode={handleAnalysisModeSelected}
+      />
+      <main className="mx-auto grid w-full max-w-7xl content-start gap-5 px-page py-5 sm:py-8">
 
       {sharedAnalysisJobs.length > 0 || analysisNotices.length > 0 ? (
         <section
@@ -2162,6 +2187,26 @@ function App() {
           />
         </div>
 
+        <div
+          id="analysis-panel-transformations"
+          role="tabpanel"
+          aria-labelledby="analysis-tab-transformations"
+          tabIndex={0}
+          hidden={activeAnalysisMode !== "transformations"}
+        >
+          {selectedFile !== null && columnNames.length > 0 && (
+            <DataTransformationPanel
+              selectedFile={rawSourceFile || selectedFile}
+              worksheetName={selectedSheet}
+              columnNames={columnNames}
+              hidden={activeAnalysisMode !== "transformations"}
+              onApplyDataset={handleApplyTransformedDataset}
+              onRevertOriginal={handleRevertOriginalDataset}
+              isTransformedDataset={isTransformed}
+            />
+          )}
+        </div>
+
         {activeAnalysisMode === "completeness" && patternSummary !== null && selectedPattern !== null && (
           <PatternRowsDialog
             patternCount={selectedPattern.count}
@@ -2199,6 +2244,7 @@ function App() {
           />
         )}
     </main>
+    </div>
   );
 }
 

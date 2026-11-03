@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,6 +7,13 @@ from typing import Literal
 from fastapi import FastAPI, Form, HTTPException, Query, Response, UploadFile
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
+
+from app.transformations import (
+    TransformRule,
+    apply_transformations_to_rows,
+    transform_csv_stream,
+    TransformationError,
+)
 
 from app.analysis_jobs import (
     HIGH_CARDINALITY_COLUMN_THRESHOLD,
@@ -219,6 +227,140 @@ def create_application(
         summary_response = column_completeness_response(job.summary)
         summary_response["job_id"] = job.job_id
         return summary_response
+
+    @application.post("/api/transformations/preview")
+    async def preview_transformations(
+        file: UploadFile,
+        sheet: str | None = Form(default=None),
+        rules: str = Form(default="[]"),
+    ) -> dict[str, object]:
+        require_supported_file(file)
+        request_directory = new_request_directory(work_directory)
+        try:
+            raw_file_path = await write_upload_to_raw_file(request_directory, file)
+            require_non_empty_file(raw_file_path)
+            analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, request_directory)
+
+            try:
+                parsed_rules_data = json.loads(rules)
+                if not isinstance(parsed_rules_data, list):
+                    parsed_rules_data = []
+                transform_rules = [
+                    TransformRule.from_dict(r)
+                    for r in parsed_rules_data
+                    if isinstance(r, dict)
+                ]
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid transformation rules JSON: {e}",
+                ) from e
+
+            import csv
+
+            with analysis_csv_path.open("r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if not header:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=UNREADABLE_CSV_MESSAGE,
+                    )
+                sample_rows = [row for _, row in zip(range(25), reader)]
+
+            new_columns, transformed_sample_rows, stats = apply_transformations_to_rows(
+                header, sample_rows, transform_rules
+            )
+
+            preview_list = []
+            for original_row, trans_row in zip(sample_rows, transformed_sample_rows):
+                orig_dict = {
+                    col: (original_row[i] if i < len(original_row) else "")
+                    for i, col in enumerate(header)
+                }
+                trans_dict = {
+                    col: (trans_row[i] if i < len(trans_row) else "")
+                    for i, col in enumerate(new_columns)
+                }
+                preview_list.append(
+                    {
+                        "original": orig_dict,
+                        "transformed": trans_dict,
+                    }
+                )
+
+            return {
+                "original_columns": header,
+                "transformed_columns": new_columns,
+                "preview_rows": preview_list,
+                "stats": {
+                    k: {
+                        "matched_count": v.matched_count,
+                        "unmatched_count": v.unmatched_count,
+                        "empty_count": v.empty_count,
+                        "total_rows": v.total_rows,
+                    }
+                    for k, v in stats.items()
+                },
+            }
+        except (WorkbookFileError, WorksheetSelectionError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except (CSVFileError, sqlite3.Error) as error:
+            raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
+        finally:
+            clean_up_request(request_directory)
+
+    @application.post("/api/transformations/apply")
+    async def apply_transformations(
+        file: UploadFile,
+        sheet: str | None = Form(default=None),
+        rules: str = Form(default="[]"),
+    ) -> Response:
+        require_supported_file(file)
+        request_directory = new_request_directory(work_directory)
+        try:
+            raw_file_path = await write_upload_to_raw_file(request_directory, file)
+            require_non_empty_file(raw_file_path)
+            analysis_csv_path = analysis_csv_path_for(raw_file_path, sheet, request_directory)
+
+            try:
+                parsed_rules_data = json.loads(rules)
+                if not isinstance(parsed_rules_data, list):
+                    parsed_rules_data = []
+                transform_rules = [
+                    TransformRule.from_dict(r)
+                    for r in parsed_rules_data
+                    if isinstance(r, dict)
+                ]
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid transformation rules JSON: {e}",
+                ) from e
+
+            output_csv_path = request_directory / "transformed.csv"
+            new_columns, stats, total_rows = transform_csv_stream(
+                analysis_csv_path, output_csv_path, transform_rules
+            )
+
+            content = output_csv_path.read_bytes()
+            orig_name = Path(file.filename or "data.csv").stem
+            export_filename = f"{orig_name}_transformed.csv"
+
+            return Response(
+                content=content,
+                media_type="text/csv; charset=utf-8",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{export_filename}"',
+                    "X-Transformed-Columns": json.dumps(new_columns),
+                },
+            )
+        except (WorkbookFileError, WorksheetSelectionError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except (CSVFileError, sqlite3.Error) as error:
+            raise HTTPException(status_code=400, detail=UNREADABLE_CSV_MESSAGE) from error
+        finally:
+            clean_up_request(request_directory)
 
     @application.get(
         "/api/column-completeness-jobs/{job_id}/columns/{column_index}/rows"
